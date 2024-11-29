@@ -1,0 +1,24 @@
+{
+  "name": "webgpu-particles",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "watch": "tsc -w",
+    "serve": "http-server"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/gl-matrix": "^3.2.0",
+    "@webgpu/types": "^0.1.51",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "gl-matrix": "^3.4.3",
+    "vite": "^6.0.1"
+  }
+}
