@@ -28,6 +28,11 @@ export interface Color {
     a: number;
 }
 
+interface Resolve {
+    texture: GPUTexture;
+    view: GPUTextureView;
+}
+
 interface MSAA {
     texture: GPUTexture;
     view: GPUTextureView;
@@ -47,6 +52,11 @@ export class Renderer {
 
     public camera!: Camera;
     private controls!: InputManager;
+
+    public resolve: Resolve = {
+        texture: {} as GPUTexture,
+        view: {} as GPUTextureView
+    };
 
     public msaa: MSAA = {
         texture: {} as GPUTexture,
@@ -97,6 +107,7 @@ export class Renderer {
             device: this.device,
             format: this.format,
             alphaMode: 'premultiplied',
+            usage: GPUTextureUsage.RENDER_ATTACHMENT
         });
 
         // Create MSAA texture
@@ -169,7 +180,7 @@ export class Renderer {
             intensity: 1.0
         });
 
-        this.pointCloud = new PointCloud(10000);
+        this.pointCloud = new PointCloud(65536);
     }
 
     // Perform a render pass and submit it to the GPU
@@ -185,12 +196,15 @@ export class Renderer {
 
         // Create a command encoder to encode the commands for the GPU
         const commandEncoder = this.device.createCommandEncoder();
+    
+        this.resolve.texture = this.context.getCurrentTexture();
+        this.resolve.view = this.resolve.texture.createView();
 
         // Begin a render pass to clear initially clear the frame
         const renderPass = commandEncoder.beginRenderPass({
             colorAttachments: [{
                 view: this.msaa.view,
-                resolveTarget: this.context.getCurrentTexture().createView(),
+                resolveTarget: this.resolve.view,
                 clearValue: { r: 0.1, g: 0.1, b: 0.1, a: 1.0 },
                 loadOp: 'clear',
                 storeOp: 'store'

@@ -16,6 +16,10 @@ import { PointCloud } from './pointcloud.js';
 export class Renderer {
     constructor(canvas) {
         this.canvas = canvas;
+        this.resolve = {
+            texture: {},
+            view: {}
+        };
         this.msaa = {
             texture: {},
             view: {},
@@ -50,6 +54,7 @@ export class Renderer {
             device: this.device,
             format: this.format,
             alphaMode: 'premultiplied',
+            usage: GPUTextureUsage.RENDER_ATTACHMENT
         });
         // Create MSAA texture
         this.msaa.texture = this.device.createTexture({
@@ -105,7 +110,7 @@ export class Renderer {
             color: { r: 1, g: 1, b: 1, a: 1 },
             intensity: 1.0
         });
-        this.pointCloud = new PointCloud(10000);
+        this.pointCloud = new PointCloud(65536);
     }
     // Perform a render pass and submit it to the GPU
     // This function is called every frame
@@ -117,11 +122,13 @@ export class Renderer {
         this.controls.update();
         // Create a command encoder to encode the commands for the GPU
         const commandEncoder = this.device.createCommandEncoder();
+        this.resolve.texture = this.context.getCurrentTexture();
+        this.resolve.view = this.resolve.texture.createView();
         // Begin a render pass to clear initially clear the frame
         const renderPass = commandEncoder.beginRenderPass({
             colorAttachments: [{
                     view: this.msaa.view,
-                    resolveTarget: this.context.getCurrentTexture().createView(),
+                    resolveTarget: this.resolve.view,
                     clearValue: { r: 0.1, g: 0.1, b: 0.1, a: 1.0 },
                     loadOp: 'clear',
                     storeOp: 'store'
