@@ -209,10 +209,11 @@ export class Noise {
 
     public static animate(
         mesh: Mesh,
-        noiseType: 'perlin' | 'fbm' ,
+        noiseType: 'perlin' | 'fbm',
         scale: number = 1.0,
         amplitude: number = 1.0,
-        octaves: number = 6
+        octaves: number = 6,
+        pingPong: boolean = false
     ): void {
         // Initialize state if not exists
         if (!this.meshStates.has(mesh)) {
@@ -228,8 +229,17 @@ export class Noise {
 
         // Generate new target if morphing is complete
         if (state.morphProgress >= 1.0) {
+
+            if (pingPong) {
+                // Reverse direction
+                const temp = state.initialVertices;
+                state.initialVertices = state.targetVertices;
+                state.targetVertices = temp;
+            } else {
+
             state.initialVertices = state.targetVertices;
             state.targetVertices = this.generateTargetState(mesh, noiseType, scale, amplitude, octaves);
+            }
             state.morphProgress = 0;
         }
 

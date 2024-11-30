@@ -132,7 +132,7 @@ export class Noise {
         vec3.normalize(normal, normal);
         return normal;
     }
-    static animate(mesh, noiseType, scale = 1.0, amplitude = 1.0, octaves = 6) {
+    static animate(mesh, noiseType, scale = 1.0, amplitude = 1.0, octaves = 6, pingPong = false) {
         // Initialize state if not exists
         if (!this.meshStates.has(mesh)) {
             this.meshStates.set(mesh, {
@@ -145,8 +145,16 @@ export class Noise {
         state.morphProgress += this.MORPH_SPEED;
         // Generate new target if morphing is complete
         if (state.morphProgress >= 1.0) {
-            state.initialVertices = state.targetVertices;
-            state.targetVertices = this.generateTargetState(mesh, noiseType, scale, amplitude, octaves);
+            if (pingPong) {
+                // Reverse direction
+                const temp = state.initialVertices;
+                state.initialVertices = state.targetVertices;
+                state.targetVertices = temp;
+            }
+            else {
+                state.initialVertices = state.targetVertices;
+                state.targetVertices = this.generateTargetState(mesh, noiseType, scale, amplitude, octaves);
+            }
             state.morphProgress = 0;
         }
         // Interpolate between initial and target states

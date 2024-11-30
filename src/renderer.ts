@@ -13,6 +13,7 @@ import { Plane } from './primitives/plane.js';
 import { SceneLights } from './lights.js';
 import { Material } from './material.js';
 import { Noise } from './noise.js';
+import { PointCloud } from './pointcloud.js';
 
 export interface Transform {
     position?: vec3;
@@ -66,6 +67,7 @@ export class Renderer {
     private cube!: Cube;
     private icosphere!: Icosphere;
     private plane!: Plane;
+    private pointCloud!: PointCloud;
 
     constructor(private canvas: HTMLCanvasElement) { }
 
@@ -166,6 +168,8 @@ export class Renderer {
             color: { r: 1, g: 1, b: 1, a: 1 },
             intensity: 1.0
         });
+
+        this.pointCloud = new PointCloud(2000);
     }
 
     // Perform a render pass and submit it to the GPU
@@ -200,6 +204,18 @@ export class Renderer {
             } as GPURenderPassDepthStencilAttachment
         });
 
+        //this.testScene(renderPass, deltaTime);
+        
+        this.pointCloud.render(renderPass);
+
+        // End the render pass
+        renderPass.end();
+
+        // Submit the commands to the GPU
+        this.device.queue.submit([commandEncoder.finish()]);
+    }
+
+    private testScene(renderPass: GPURenderPassEncoder, deltaTime: number) {
         // Here we render the primitives.
         // Ideally we would have a scene graph with multiple objects to render
         // but for simplicity we just render the cube here.
@@ -211,22 +227,12 @@ export class Renderer {
         //this.cube.render(renderPass);
         this.plane.render(renderPass);
 
-        const transform = () => {
-            this.cube.rotate(0, deltaTime, 0);
-            this.icosphere.rotate(0, deltaTime, 0);
+        this.cube.rotate(0, deltaTime, 0);
+        this.icosphere.rotate(0, deltaTime, 0);
 
-            this.cube.translate(0, -Math.sin(deltaTime) * 0.001, 0);
-            this.icosphere.translate(0, Math.sin(deltaTime) * 0.001, 0);
+        this.cube.translate(0, -Math.sin(deltaTime) * 0.001, 0);
+        this.icosphere.translate(0, Math.sin(deltaTime) * 0.001, 0);
 
-            Noise.animate(this.plane, "perlin", 5.0, 1.0);
-        };
-
-        transform();
-
-        // End the render pass
-        renderPass.end();
-
-        // Submit the commands to the GPU
-        this.device.queue.submit([commandEncoder.finish()]);
+        Noise.animate(this.plane, "perlin", 5.0, 1.0);
     }
 }

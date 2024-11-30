@@ -12,6 +12,7 @@ import { Plane } from './primitives/plane.js';
 import { SceneLights } from './lights.js';
 import { Material } from './material.js';
 import { Noise } from './noise.js';
+import { PointCloud } from './pointcloud.js';
 export class Renderer {
     constructor(canvas) {
         this.canvas = canvas;
@@ -104,6 +105,7 @@ export class Renderer {
             color: { r: 1, g: 1, b: 1, a: 1 },
             intensity: 1.0
         });
+        this.pointCloud = new PointCloud(2000);
     }
     // Perform a render pass and submit it to the GPU
     // This function is called every frame
@@ -132,6 +134,14 @@ export class Renderer {
                 depthClearValue: 1.0,
             }
         });
+        //this.testScene(renderPass, deltaTime);
+        this.pointCloud.render(renderPass);
+        // End the render pass
+        renderPass.end();
+        // Submit the commands to the GPU
+        this.device.queue.submit([commandEncoder.finish()]);
+    }
+    testScene(renderPass, deltaTime) {
         // Here we render the primitives.
         // Ideally we would have a scene graph with multiple objects to render
         // but for simplicity we just render the cube here.
@@ -142,17 +152,10 @@ export class Renderer {
         this.icosphere.render(renderPass);
         //this.cube.render(renderPass);
         this.plane.render(renderPass);
-        const transform = () => {
-            this.cube.rotate(0, deltaTime, 0);
-            this.icosphere.rotate(0, deltaTime, 0);
-            this.cube.translate(0, -Math.sin(deltaTime) * 0.001, 0);
-            this.icosphere.translate(0, Math.sin(deltaTime) * 0.001, 0);
-            Noise.animate(this.plane, "perlin", 5.0, 1.0);
-        };
-        transform();
-        // End the render pass
-        renderPass.end();
-        // Submit the commands to the GPU
-        this.device.queue.submit([commandEncoder.finish()]);
+        this.cube.rotate(0, deltaTime, 0);
+        this.icosphere.rotate(0, deltaTime, 0);
+        this.cube.translate(0, -Math.sin(deltaTime) * 0.001, 0);
+        this.icosphere.translate(0, Math.sin(deltaTime) * 0.001, 0);
+        Noise.animate(this.plane, "perlin", 5.0, 1.0);
     }
 }
