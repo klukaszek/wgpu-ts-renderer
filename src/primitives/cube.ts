@@ -1,11 +1,13 @@
 // cube.ts
-import { Material, Mesh3D, Transform } from '../mesh.js';
-import { Renderer } from '../renderer.js';
+import { WGPU_RENDERER } from '../main.js';
+import { Material } from '../material.js';
+import { Mesh } from '../mesh.js';
+import { Transform } from '../renderer.js';
 
-export class Cube extends Mesh3D {
+export class Cube extends Mesh {
 
-    constructor(renderer: Renderer, transform?: Transform, material?: Material) {
-        super(renderer, transform, material);
+    constructor(transform?: Transform, material?: Material) {
+        super(transform, material);
         this.initBuffers();
         this.initPipeline();
     }
@@ -34,110 +36,16 @@ export class Cube extends Mesh3D {
             0, 4, 7, 0, 7, 1,  // Bottom
         ]);
 
-        this.vertexBuffer = this.device.createBuffer({
+        this.vertexBuffer = WGPU_RENDERER.device.createBuffer({
             size: this.vertices.length * 4,
             usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
         });
-        this.device.queue.writeBuffer(this.vertexBuffer, 0, this.vertices);
+        WGPU_RENDERER.device.queue.writeBuffer(this.vertexBuffer, 0, this.vertices);
 
-        this.indexBuffer = this.device.createBuffer({
+        this.indexBuffer = WGPU_RENDERER.device.createBuffer({
             size: this.indices.length * 2,
             usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
         });
-        this.device.queue.writeBuffer(this.indexBuffer, 0, this.indices);
-    }
-
-    protected initPipeline(): void {
-        const vertexBufferLayout: GPUVertexBufferLayout = {
-            arrayStride: 24,
-            attributes: [
-                {
-                    format: 'float32x3',
-                    offset: 0,
-                    shaderLocation: 0
-                },
-                {
-                    format: 'float32x3',
-                    offset: 12,
-                    shaderLocation: 1
-                }
-            ]
-        };
-
-        const bindGroupLayout = this.device.createBindGroupLayout({
-            entries: [{
-                binding: 0,
-                visibility: GPUShaderStage.VERTEX,
-                buffer: { type: 'uniform' },
-            },
-            {
-                binding: 1,
-                visibility: GPUShaderStage.VERTEX,
-                buffer: { type: 'uniform' },
-            },
-            {
-                binding: 2,
-                visibility: GPUShaderStage.FRAGMENT,
-                buffer: { type: 'uniform' },
-            }]
-        });
-
-        const pipelineLayout = this.device.createPipelineLayout({
-            bindGroupLayouts: [bindGroupLayout]
-        });
-
-        this.pipeline = this.device.createRenderPipeline({
-            layout: pipelineLayout,
-            vertex: {
-                module: this.device.createShaderModule({
-                    code: this.defaultMeshVertexShader,
-                }),
-                entryPoint: 'main',
-                buffers: [vertexBufferLayout]
-            },
-            fragment: {
-                module: this.device.createShaderModule({
-                    code: this.defaultMeshFragmentShader,
-                }),
-                entryPoint: 'main',
-                targets: [{
-                    format: navigator.gpu.getPreferredCanvasFormat()
-                }]
-            },
-            primitive: {
-                topology: 'triangle-list'
-            },
-            multisample: {
-                count: 4
-            }
-        });
-    }
-
-    render(renderPass: GPURenderPassEncoder): void {
-        if (!this.bindGroup) {
-            this.bindGroup = this.device.createBindGroup({
-                layout: this.pipeline.getBindGroupLayout(0),
-                entries: [
-                    {
-                        binding: 0,
-                        resource: { buffer: this.renderer.camera.getUniformBuffer() }
-                    },
-                    {
-                        binding: 1,
-                        resource: { buffer: this.modelViewBuffer }
-                    },
-                    {
-                        binding: 2,
-                        resource: { buffer: this.colorBuffer }
-                    }
-                ] as GPUBindGroupEntry[],
-            });
-        }
-
-        renderPass.setPipeline(this.pipeline);
-        renderPass.setBindGroup(0, this.bindGroup);
-        renderPass.setVertexBuffer(0, this.vertexBuffer);
-        renderPass.setIndexBuffer(this.indexBuffer!, 'uint16');
-        renderPass.drawIndexed(36);
+        WGPU_RENDERER.device.queue.writeBuffer(this.indexBuffer, 0, this.indices);
     }
 }

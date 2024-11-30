@@ -4,26 +4,62 @@
 //
 // Description: This file contains the Renderer class which is responsible for rendering object3D objects to the screen.
 
-import { vec3 } from 'gl-matrix';
+import { vec3, quat } from 'gl-matrix';
 import { Camera } from './camera.js';
 import { InputManager } from './input.js';
 import { Cube } from './primitives/cube.js';
 import { Icosphere } from './primitives/icosphere.js';
+import { SceneLights } from './lights.js';
+
+export interface Transform {
+    position?: vec3;
+    rotation?: quat;
+    scale?: vec3;
+}
+
+export interface Color {
+    r: number;
+    g: number;
+    b: number;
+    a: number;
+}
+
+interface MSAA {
+    texture: GPUTexture;
+    view: GPUTextureView;
+    sampleCount: number;
+}
+
+interface DepthTexture {
+    texture: GPUTexture;
+    view: GPUTextureView;
+    format: GPUTextureFormat;
+}
 
 export class Renderer {
     public device!: GPUDevice;
     public context!: GPUCanvasContext;
+    public format!: GPUTextureFormat;
     
     public camera!: Camera;
     private controls!: InputManager;
  
-    public msaaTexture!: GPUTexture;
-    public msaaTextureView!: GPUTextureView;
-    public sampleCount: number = 4;
+    public msaa: MSAA = {
+        texture: {} as GPUTexture,
+        view: {} as GPUTextureView,
+        sampleCount: 4
+    };
+
+    public depthTexture: DepthTexture = {
+        texture: {} as GPUTexture,
+        view: {} as GPUTextureView,
+        format: 'depth24plus'
+    };
     
     private lastFrameTime: number = 0;
 
     // Scene objects
+    public sceneLights: SceneLights | undefined;
     private cube!: Cube;
     private icosphere!: Icosphere;
 
@@ -50,15 +86,15 @@ export class Renderer {
         this.canvas.height = window.innerHeight;
     
         // Get the preferred format of the canvas
-        const canvasFormat = navigator.gpu.getPreferredCanvasFormat();
+        this.format = navigator.gpu.getPreferredCanvasFormat();
         this.context.configure({
             device: this.device,
-            format: canvasFormat,
+            format: this.format,
             alphaMode: 'premultiplied',
         });
 
         // Create MSAA texture
-        this.msaaTexture = this.device.createTexture({
+        this.msaa.texture = this.device.createTexture({
             size: {
                 width: this.canvas.width,
                 height: this.canvas.height,
@@ -67,8 +103,19 @@ export class Renderer {
             format: navigator.gpu.getPreferredCanvasFormat(),
             usage: GPUTextureUsage.RENDER_ATTACHMENT
         });
-        this.msaaTextureView = this.msaaTexture.createView();
+        this.msaa.view = this.msaa.texture.createView();
         this.context.getCurrentTexture().createView();
+
+        this.depthTexture.texture = this.device.createTexture({
+            size: {
+                width: this.canvas.width,
+                height: this.canvas.height,
+            },
+            sampleCount: 4,
+            format: 'depth24plus',
+            usage: GPUTextureUsage.RENDER_ATTACHMENT
+        });
+        this.depthTexture.view = this.depthTexture.texture.createView();
         
         // Create camera & controls
         this.camera = new Camera(
@@ -84,10 +131,19 @@ export class Renderer {
         this.controls = new InputManager(this.camera, this.canvas);
 
         // Initialize scene objects
-        this.cube = new Cube(this, { position: vec3.fromValues(0, 0, 0) });
-        this.icosphere = new Icosphere(this, 2, { position: vec3.fromValues(0, 2, 0) });
+        this.cube = new Cube({ position: vec3.fromValues(0, 0, 0) });
+        this.icosphere = new Icosphere(4, { position: vec3.fromValues(0, 2, 0) });
+        this.sceneLights = new SceneLights();
+
+        // Add some lights to the scene
+        this.sceneLights.addLight({
+            position: vec3.fromValues(0, 5, 0),
+            color: { r: 1, g: 1, b: 1, a: 1 },
+            intensity: 1.0
+        });
+
     }
-    
+
     // Perform a render pass and submit it to the GPU
     // This function is called every frame
     // The timestamp is the current time in milliseconds
@@ -105,12 +161,19 @@ export class Renderer {
         // Begin a render pass to clear initially clear the frame
         const renderPass = commandEncoder.beginRenderPass({
             colorAttachments: [{
-                view: this.msaaTextureView,
+                view: this.msaa.view,
                 resolveTarget: this.context.getCurrentTexture().createView(),
                 clearValue: { r: 0.1, g: 0.2, b: 0.3, a: 1.0 },
                 loadOp: 'clear',
                 storeOp: 'store'
-            }]
+            }],
+            depthStencilAttachment: {
+                view: this.depthTexture.view,
+                depthLoadOp: 'clear',
+                depthStoreOp: 'store',
+                depthLoadValue: 0.0,
+                depthClearValue: 1.0,
+            } as GPURenderPassDepthStencilAttachment
         });
 
         // Here we render the primitives.

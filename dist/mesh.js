@@ -1,9 +1,14 @@
+// file: mesh.ts
+// author: Kyle Lukaszek
+// date: 11/29/2024
 import { vec3, mat4, quat } from 'gl-matrix';
+import { Material } from './material.js';
+import { WGPU_RENDERER } from './main.js';
 // Abstract class for 3D objects
 // Contains position, rotation, scale, modelViewMatrix, and necessary buffers.
-export class Mesh3D {
+export class Mesh {
     // Constructor for a standard 3D primitive
-    constructor(renderer, transform, material) {
+    constructor(transform, material) {
         this.modelViewMatrix = mat4.create();
         this.vertexBuffer = null;
         this.indexBuffer = null;
@@ -44,10 +49,8 @@ export class Mesh3D {
                 return colorUniform.color;
             }
         `;
-        this.device = renderer.device;
-        this.renderer = renderer;
         // Create the model view buffer
-        this.modelViewBuffer = this.device.createBuffer({
+        this.modelViewBuffer = WGPU_RENDERER.device.createBuffer({
             size: 64, // 4x4 matrix
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
         });
@@ -71,7 +74,7 @@ export class Mesh3D {
         // Update the model matrix buffer for shader use
         this.updateModelMatrixBuffer();
         // Create the color buffer
-        this.colorBuffer = this.device.createBuffer({
+        this.colorBuffer = WGPU_RENDERER.device.createBuffer({
             size: 16,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
         });
@@ -80,11 +83,102 @@ export class Mesh3D {
             this.material = material;
         }
         else {
-            this.material = {
-                color: { r: 1, g: 0, b: 0, a: 1 }
-            };
+            this.material = new Material();
         }
         this.updateColorBuffer();
+    }
+    initPipeline() {
+        const vertexBufferLayout = {
+            arrayStride: 24,
+            attributes: [
+                {
+                    format: 'float32x3',
+                    offset: 0,
+                    shaderLocation: 0
+                },
+                {
+                    format: 'float32x3',
+                    offset: 12,
+                    shaderLocation: 1
+                }
+            ]
+        };
+        const bindGroupLayout = WGPU_RENDERER.device.createBindGroupLayout({
+            entries: [{
+                    binding: 0,
+                    visibility: GPUShaderStage.VERTEX,
+                    buffer: { type: 'uniform' },
+                },
+                {
+                    binding: 1,
+                    visibility: GPUShaderStage.VERTEX,
+                    buffer: { type: 'uniform' },
+                },
+                {
+                    binding: 2,
+                    visibility: GPUShaderStage.FRAGMENT,
+                    buffer: { type: 'uniform' },
+                }]
+        });
+        const pipelineLayout = WGPU_RENDERER.device.createPipelineLayout({
+            bindGroupLayouts: [bindGroupLayout]
+        });
+        this.pipeline = WGPU_RENDERER.device.createRenderPipeline({
+            layout: pipelineLayout,
+            vertex: {
+                module: WGPU_RENDERER.device.createShaderModule({
+                    code: this.defaultMeshVertexShader,
+                }),
+                entryPoint: 'main',
+                buffers: [vertexBufferLayout]
+            },
+            fragment: {
+                module: WGPU_RENDERER.device.createShaderModule({
+                    code: this.defaultMeshFragmentShader,
+                }),
+                entryPoint: 'main',
+                targets: [{
+                        format: navigator.gpu.getPreferredCanvasFormat()
+                    }]
+            },
+            primitive: {
+                topology: 'triangle-list'
+            },
+            multisample: {
+                count: 4
+            },
+            depthStencil: {
+                format: 'depth24plus',
+                depthWriteEnabled: true,
+                depthCompare: 'less'
+            }
+        });
+    }
+    render(renderPass) {
+        if (!this.bindGroup) {
+            this.bindGroup = WGPU_RENDERER.device.createBindGroup({
+                layout: this.pipeline.getBindGroupLayout(0),
+                entries: [
+                    {
+                        binding: 0,
+                        resource: { buffer: WGPU_RENDERER.camera.getUniformBuffer() }
+                    },
+                    {
+                        binding: 1,
+                        resource: { buffer: this.modelViewBuffer }
+                    },
+                    {
+                        binding: 2,
+                        resource: { buffer: this.colorBuffer }
+                    }
+                ],
+            });
+        }
+        renderPass.setPipeline(this.pipeline);
+        renderPass.setBindGroup(0, this.bindGroup);
+        renderPass.setVertexBuffer(0, this.vertexBuffer);
+        renderPass.setIndexBuffer(this.indexBuffer, 'uint16');
+        renderPass.drawIndexed(this.indices.length);
     }
     // Set the position of the mesh
     setPosition(x, y, z) {
@@ -116,7 +210,7 @@ export class Mesh3D {
         mat4.rotateX(modelMatrix, modelMatrix, this.transform.rotation[0]);
         mat4.scale(modelMatrix, modelMatrix, this.transform.scale);
         this.modelViewMatrix = modelMatrix;
-        this.device.queue.writeBuffer(this.modelViewBuffer, 0, this.modelViewMatrix);
+        WGPU_RENDERER.device.queue.writeBuffer(this.modelViewBuffer, 0, this.modelViewMatrix);
     }
     // Update the mesh's color
     setColor(color) {
@@ -126,7 +220,7 @@ export class Mesh3D {
     updateColorBuffer() {
         const { material } = this;
         const { color } = material;
-        this.device.queue.writeBuffer(this.colorBuffer, 0, new Float32Array([
+        WGPU_RENDERER.device.queue.writeBuffer(this.colorBuffer, 0, new Float32Array([
             color.r,
             color.g,
             color.b,

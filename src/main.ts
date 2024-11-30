@@ -3,6 +3,8 @@ import { Renderer } from './renderer.js';
 const canvas = document.querySelector('canvas')!;
 const renderer = new Renderer(canvas)!;
 
+export const WGPU_RENDERER = renderer;
+
 // Program entrypoint
 async function main() {
     if (!canvas) {
@@ -31,8 +33,8 @@ window.addEventListener('resize', () => {
     renderer.camera.updateAspectRatio(canvas.width / canvas.height);
 
     // Resize the MSAA texture to match the canvas size
-    renderer.msaaTexture.destroy()!;
-    renderer.msaaTexture = renderer.device.createTexture({
+    renderer.msaa.texture.destroy()!;
+    renderer.msaa.texture = renderer.device.createTexture({
         size: {
             width: canvas.width,
             height: canvas.height,
@@ -41,7 +43,19 @@ window.addEventListener('resize', () => {
         format: navigator.gpu.getPreferredCanvasFormat(),
         usage: GPUTextureUsage.RENDER_ATTACHMENT
     });
-    renderer.msaaTextureView = renderer.msaaTexture.createView();
+    renderer.msaa.view = renderer.msaa.texture.createView();
+
+    renderer.depthTexture.texture.destroy()!;
+    renderer.depthTexture.texture = renderer.device.createTexture({
+        size: {
+            width: canvas.width,
+            height: canvas.height,
+        },
+        sampleCount: 4,
+        format: 'depth24plus',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT
+    });
+    renderer.depthTexture.view = renderer.depthTexture.texture.createView();
 
 });
 
