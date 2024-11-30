@@ -35,33 +35,84 @@ export abstract class Mesh {
                 modelMatrix: mat4x4<f32>
             }
 
+            struct Light {
+                position: vec3<f32>,
+                padding: f32,
+                color: vec4<f32>,
+                intensity: f32,
+                _padding: vec3<f32>
+            }
+
+            struct VertexOutput {
+                @builtin(position) position: vec4<f32>,
+                @location(0) worldPos: vec3<f32>,
+                @location(1) normal: vec3<f32>
+            }
+
             @binding(0) @group(0) var<uniform> uniforms: Uniforms;
             @binding(1) @group(0) var<uniform> model: ModelUniform;
+            @binding(3) @group(0) var<storage, read> lights: array<Light>;
 
             @vertex
             fn main(
                 @location(0) position: vec3<f32>,
-                @location(1) color: vec3<f32>
-            ) -> @builtin(position) vec4<f32> {
-                return uniforms.projectionMatrix * uniforms.viewMatrix * model.modelMatrix * vec4<f32>(position, 1.0);
+                @location(1) normal: vec3<f32>
+            ) -> VertexOutput {
+                var output: VertexOutput;
+                let worldPos = (model.modelMatrix * vec4<f32>(position, 1.0)).xyz;
+                output.worldPos = worldPos;
+                output.normal = normalize((model.modelMatrix * vec4<f32>(normal, 0.0)).xyz);
+                output.position = uniforms.projectionMatrix * uniforms.viewMatrix * vec4<f32>(worldPos, 1.0);
+                return output;
             }
         `;
 
     protected defaultMeshFragmentShader = `
             struct ColorUniform {
-                color: vec4<f32>
+                color: vec4<f32>,
             }
+
+            struct Light {
+                position: vec3<f32>,
+                padding: f32,
+                color: vec4<f32>,
+                intensity: f32,
+                _padding: vec3<f32>
+            }
+
             @binding(2) @group(0) var<uniform> colorUniform: ColorUniform;
+            @binding(3) @group(0) var<storage, read> lights: array<Light>;
+            @binding(4) @group(0) var<uniform> numLights: u32;
 
             @fragment
-            fn main() -> @location(0) vec4<f32> {
-                return colorUniform.color;
+            fn main(
+                @location(0) worldPos: vec3<f32>,
+                @location(1) normal: vec3<f32>
+            ) -> @location(0) vec4<f32> {
+                let N = normalize(normal);
+                var finalColor = vec3<f32>(0.0);
+                let ambient = 0.1;
+                
+                // Add ambient light
+                finalColor += colorUniform.color.rgb * ambient;
+                
+                // Calculate contribution from each light
+                for(var i = 0u; i < numLights; i++) {
+                    let L = normalize(lights[i].position - worldPos);
+                    let diffuse = max(dot(N, L), 0.0);
+                    
+                    // Add diffuse lighting
+                    finalColor += colorUniform.color.rgb * lights[i].color.rgb * 
+                                 diffuse * lights[i].intensity;
+                }
+                
+                return vec4<f32>(finalColor, colorUniform.color.a);
             }
         `;
 
     // Constructor for a standard 3D primitive
     constructor(transform?: Transform, material?: Material) {
-        
+
         // Create the model view buffer
         this.modelViewBuffer = WGPU_RENDERER.device.createBuffer({
             size: 64, // 4x4 matrix
@@ -111,35 +162,22 @@ export abstract class Mesh {
         const vertexBufferLayout: GPUVertexBufferLayout = {
             arrayStride: 24,
             attributes: [
-                {
-                    format: 'float32x3',
-                    offset: 0,
-                    shaderLocation: 0
-                },
-                {
-                    format: 'float32x3',
-                    offset: 12,
-                    shaderLocation: 1
-                }
+                { format: 'float32x3', offset: 0, shaderLocation: 0 }, // position
+                { format: 'float32x3', offset: 12, shaderLocation: 1 } // normal
             ]
         };
 
         const bindGroupLayout = WGPU_RENDERER.device.createBindGroupLayout({
-            entries: [{
-                binding: 0,
-                visibility: GPUShaderStage.VERTEX,
-                buffer: { type: 'uniform' },
-            },
-            {
-                binding: 1,
-                visibility: GPUShaderStage.VERTEX,
-                buffer: { type: 'uniform' },
-            },
-            {
-                binding: 2,
-                visibility: GPUShaderStage.FRAGMENT,
-                buffer: { type: 'uniform' },
-            }]
+            entries: [
+                { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+                { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+                { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+                {
+                    binding: 3, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                    buffer: { type: 'read-only-storage' }
+                },
+                { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }
+            ]
         });
 
         const pipelineLayout = WGPU_RENDERER.device.createPipelineLayout({
@@ -183,19 +221,16 @@ export abstract class Mesh {
             this.bindGroup = WGPU_RENDERER.device.createBindGroup({
                 layout: this.pipeline.getBindGroupLayout(0),
                 entries: [
+                    { binding: 0, resource: { buffer: WGPU_RENDERER.camera.getUniformBuffer() } },
+                    { binding: 1, resource: { buffer: this.modelViewBuffer } },
+                    { binding: 2, resource: { buffer: this.colorBuffer } },
+                    { binding: 3, resource: { buffer: WGPU_RENDERER.sceneLights!.getLightsBuffer() } },
                     {
-                        binding: 0,
-                        resource: { buffer: WGPU_RENDERER.camera.getUniformBuffer() }
-                    },
-                    {
-                        binding: 1,
-                        resource: { buffer: this.modelViewBuffer }
-                    },
-                    {
-                        binding: 2,
-                        resource: { buffer: this.colorBuffer }
+                        binding: 4, resource: {
+                            buffer: WGPU_RENDERER.sceneLights!.getLightCountBuffer()
+                        }
                     }
-                ] as GPUBindGroupEntry[],
+                ] as GPUBindGroupEntry[]
             });
         }
 
@@ -205,7 +240,7 @@ export abstract class Mesh {
         renderPass.setIndexBuffer(this.indexBuffer!, 'uint16');
         renderPass.drawIndexed(this.indices!.length);
     }
-    
+
     // Set the position of the mesh
     public setPosition(x: number, y: number, z: number): void {
         const { position } = this.transform!;
@@ -244,7 +279,7 @@ export abstract class Mesh {
         this.modelViewMatrix = modelMatrix;
         WGPU_RENDERER.device.queue.writeBuffer(this.modelViewBuffer!, 0, this.modelViewMatrix as Float32Array);
     }
-    
+
     // Update the mesh's color
     public setColor(color: Color): void {
         this.material!.color = color;

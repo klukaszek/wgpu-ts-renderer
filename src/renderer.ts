@@ -135,6 +135,9 @@ export class Renderer {
         this.icosphere = new Icosphere(4, { position: vec3.fromValues(0, 2, 0) });
         this.sceneLights = new SceneLights();
 
+        this.cube.setColor({ r: 1, g: 0, b: 0, a: 1 });
+        this.icosphere.setColor({ r: 0, g: 1, b: 0, a: 1 });
+
         // Add some lights to the scene
         this.sceneLights.addLight({
             position: vec3.fromValues(0, 5, 0),

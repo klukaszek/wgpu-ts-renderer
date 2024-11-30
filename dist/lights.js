@@ -1,3 +1,6 @@
+// file: lights.ts
+// author: Kyle Lukaszek
+// date: 11/29/2024
 import { WGPU_RENDERER } from './main.js';
 export class SceneLights {
     constructor() {
@@ -9,6 +12,10 @@ export class SceneLights {
         this.lightsBuffer = WGPU_RENDERER.device.createBuffer({
             size: this.MAX_LIGHTS * this.LIGHT_STRIDE,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
+        this.lightCountBuffer = WGPU_RENDERER.device.createBuffer({
+            size: 4,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
     }
     addLight(light) {
@@ -54,11 +61,15 @@ export class SceneLights {
             bufferData[offset + 11] = 0; // padding
         });
         WGPU_RENDERER.device.queue.writeBuffer(this.lightsBuffer, 0, bufferData);
+        WGPU_RENDERER.device.queue.writeBuffer(this.lightCountBuffer, 0, new Uint32Array([this.lights.length]));
     }
     getLightsBuffer() {
         return this.lightsBuffer;
     }
     getLightCount() {
         return this.lights.length;
+    }
+    getLightCountBuffer() {
+        return this.lightCountBuffer;
     }
 }

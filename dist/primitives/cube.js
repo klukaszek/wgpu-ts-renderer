@@ -1,4 +1,6 @@
-// cube.ts
+// File: cube.ts
+// Author: Kyle Lukaszek
+// Date: 11/29/2024
 import { WGPU_RENDERER } from '../main.js';
 import { Mesh } from '../mesh.js';
 export class Cube extends Mesh {
@@ -10,15 +12,35 @@ export class Cube extends Mesh {
     initBuffers() {
         this.vertices = new Float32Array([
             // Front face
-            -1, -1, 1, 1, 0, 0,
-            1, -1, 1, 0, 1, 0,
+            -1, -1, 1, 0, 0, 1, // vertex xyz, normal xyz
+            1, -1, 1, 0, 0, 1,
             1, 1, 1, 0, 0, 1,
-            -1, 1, 1, 1, 1, 0,
+            -1, 1, 1, 0, 0, 1,
             // Back face
-            -1, -1, -1, 1, 0, 0,
+            -1, -1, -1, 0, 0, -1,
+            -1, 1, -1, 0, 0, -1,
+            1, 1, -1, 0, 0, -1,
+            1, -1, -1, 0, 0, -1,
+            // Top face
             -1, 1, -1, 0, 1, 0,
-            1, 1, -1, 0, 0, 1,
-            1, -1, -1, 1, 1, 0,
+            -1, 1, 1, 0, 1, 0,
+            1, 1, 1, 0, 1, 0,
+            1, 1, -1, 0, 1, 0,
+            // Bottom face
+            -1, -1, -1, 0, -1, 0,
+            1, -1, -1, 0, -1, 0,
+            1, -1, 1, 0, -1, 0,
+            -1, -1, 1, 0, -1, 0,
+            // Right face
+            1, -1, -1, 1, 0, 0,
+            1, 1, -1, 1, 0, 0,
+            1, 1, 1, 1, 0, 0,
+            1, -1, 1, 1, 0, 0,
+            // Left face
+            -1, -1, -1, -1, 0, 0,
+            -1, -1, 1, -1, 0, 0,
+            -1, 1, 1, -1, 0, 0,
+            -1, 1, -1, -1, 0, 0,
         ]);
         this.indices = new Uint16Array([
             0, 1, 2, 0, 2, 3, // Front
