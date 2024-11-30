@@ -14,7 +14,7 @@ export class Camera {
         this.projectionMatrix = mat4.create();
         // Create uniform buffer
         this.uniformBuffer = device.createBuffer({
-            size: 128,
+            size: 144,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
         });
         this.updateViewMatrix();
@@ -26,11 +26,15 @@ export class Camera {
         mat4.invert(this.viewMatrix, this.viewMatrix);
         // Update GPU buffer
         this.device.queue.writeBuffer(this.uniformBuffer, 0, this.viewMatrix);
+        this.updateViewPosition();
     }
     updateProjectionMatrix() {
         mat4.perspective(this.projectionMatrix, this.fov, this.aspect, this.near, this.far);
         // Update GPU buffer
         this.device.queue.writeBuffer(this.uniformBuffer, 64, this.projectionMatrix);
+    }
+    updateViewPosition() {
+        this.device.queue.writeBuffer(this.uniformBuffer, 128, this.position);
     }
     updateAspectRatio(aspect) {
         this.aspect = aspect;

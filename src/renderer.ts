@@ -9,7 +9,10 @@ import { Camera } from './camera.js';
 import { InputManager } from './input.js';
 import { Cube } from './primitives/cube.js';
 import { Icosphere } from './primitives/icosphere.js';
+import { Plane } from './primitives/plane.js';
 import { SceneLights } from './lights.js';
+import { Material } from './material.js';
+import { Noise } from './noise.js';
 
 export interface Transform {
     position?: vec3;
@@ -40,10 +43,10 @@ export class Renderer {
     public device!: GPUDevice;
     public context!: GPUCanvasContext;
     public format!: GPUTextureFormat;
-    
+
     public camera!: Camera;
     private controls!: InputManager;
- 
+
     public msaa: MSAA = {
         texture: {} as GPUTexture,
         view: {} as GPUTextureView,
@@ -55,36 +58,37 @@ export class Renderer {
         view: {} as GPUTextureView,
         format: 'depth24plus'
     };
-    
+
     private lastFrameTime: number = 0;
 
     // Scene objects
     public sceneLights: SceneLights | undefined;
     private cube!: Cube;
     private icosphere!: Icosphere;
+    private plane!: Plane;
 
     constructor(private canvas: HTMLCanvasElement) { }
-    
+
     // Initialize the renderer with a controllable first person camera.
     async init() {
         if (!navigator.gpu) {
             throw new Error("WebGPU not supported");
         }
-        
+
         // Request an adapter
         const adapter = await navigator.gpu.requestAdapter();
         if (!adapter) {
             throw new Error("No appropriate GPUAdapter found");
         }
-        
+
         // Create a GPUDevice
         this.device = await adapter.requestDevice();
         this.context = this.canvas.getContext('webgpu') as GPUCanvasContext;
-        
+
         // Resize the canvas to fill the window
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
-    
+
         // Get the preferred format of the canvas
         this.format = navigator.gpu.getPreferredCanvasFormat();
         this.context.configure({
@@ -116,7 +120,7 @@ export class Renderer {
             usage: GPUTextureUsage.RENDER_ATTACHMENT
         });
         this.depthTexture.view = this.depthTexture.texture.createView();
-        
+
         // Create camera & controls
         this.camera = new Camera(
             this.device,
@@ -131,20 +135,37 @@ export class Renderer {
         this.controls = new InputManager(this.camera, this.canvas);
 
         // Initialize scene objects
-        this.cube = new Cube({ position: vec3.fromValues(0, 0, 0) });
-        this.icosphere = new Icosphere(4, { position: vec3.fromValues(0, 2, 0) });
+        this.cube = new Cube({ position: vec3.fromValues(0, 1, 0) });
+        this.icosphere = new Icosphere(4, { position: vec3.fromValues(0, 0.1, 0) });
+        this.plane = new Plane(150, { position: vec3.fromValues(0, -1, 0), scale: vec3.fromValues(10, 1, 10) });
         this.sceneLights = new SceneLights();
 
-        this.cube.setColor({ r: 1, g: 0, b: 0, a: 1 });
-        this.icosphere.setColor({ r: 0, g: 1, b: 0, a: 1 });
+        const redPlastic = Material.createStatic("redPlastic",
+            { r: 1.0, g: 0.0, b: 0.0, a: 1.0 },
+            0.2,    // ambient
+            0.8,    // diffuse
+            0.5,    // specular
+            32.0    // shininess
+        );
+
+        const dryMud = Material.createStatic("dryMud",
+            { r: 0.6, g: 0.4, b: 0.2, a: 1.0 },
+            0.2,    // ambient
+            0.1,    // diffuse
+            0.4,    // specular
+            0.0    // shininess
+        );
+
+        this.cube.setMaterial(redPlastic);
+        this.icosphere.setMaterial(redPlastic);
+        this.plane.setMaterial(dryMud);
 
         // Add some lights to the scene
         this.sceneLights.addLight({
-            position: vec3.fromValues(0, 5, 0),
+            position: vec3.fromValues(10, 20, 20),
             color: { r: 1, g: 1, b: 1, a: 1 },
             intensity: 1.0
         });
-
     }
 
     // Perform a render pass and submit it to the GPU
@@ -160,7 +181,7 @@ export class Renderer {
 
         // Create a command encoder to encode the commands for the GPU
         const commandEncoder = this.device.createCommandEncoder();
-        
+
         // Begin a render pass to clear initially clear the frame
         const renderPass = commandEncoder.beginRenderPass({
             colorAttachments: [{
@@ -187,13 +208,24 @@ export class Renderer {
         // reduce the cpu overhead of performing the same commands every frame.
         // This can be explored in the future.  
         this.icosphere.render(renderPass);
-        this.cube.render(renderPass);
+        //this.cube.render(renderPass);
+        this.plane.render(renderPass);
 
-        this.cube.rotate(0, deltaTime, 0);
+        const transform = () => {
+            this.cube.rotate(0, deltaTime, 0);
+            this.icosphere.rotate(0, deltaTime, 0);
+
+            this.cube.translate(0, -Math.sin(deltaTime) * 0.001, 0);
+            this.icosphere.translate(0, Math.sin(deltaTime) * 0.001, 0);
+
+            Noise.animate(this.plane, "perlin", 5.0, 1.0);
+        };
+
+        transform();
 
         // End the render pass
         renderPass.end();
-        
+
         // Submit the commands to the GPU
         this.device.queue.submit([commandEncoder.finish()]);
     }

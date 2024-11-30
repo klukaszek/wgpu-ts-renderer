@@ -18,104 +18,118 @@ export abstract class Mesh {
     protected indexBuffer: GPUBuffer | null = null;
     protected modelViewBuffer: GPUBuffer | null = null;
     protected colorBuffer: GPUBuffer | null = null;
+    protected normalMatrixBuffer: GPUBuffer | null = null;
 
     protected bindGroup: GPUBindGroup | null = null;
-    protected vertices: Float32Array | null = null;
+    public vertices: Float32Array | null = null;
     protected indices: Uint16Array | null = null;
 
     protected pipeline!: GPURenderPipeline;
 
     protected defaultMeshVertexShader = `
-            struct Uniforms {
-                viewMatrix: mat4x4<f32>,
-                projectionMatrix: mat4x4<f32>,
-            }
+        struct Uniforms {
+            viewMatrix: mat4x4<f32>,
+            projectionMatrix: mat4x4<f32>,
+            viewPosition: vec4<f32>,
+        }
 
-            struct ModelUniform {
-                modelMatrix: mat4x4<f32>
-            }
+        struct ModelUniform {
+            modelMatrix: mat4x4<f32>,
+            normalMatrix: mat4x4<f32>
+        }
 
-            struct Light {
-                position: vec3<f32>,
-                padding: f32,
-                color: vec4<f32>,
-                intensity: f32,
-                _padding: vec3<f32>
-            }
+        struct Light {
+            position: vec3<f32>,
+            padding: f32,
+            color: vec4<f32>,
+            intensity: f32,
+            _padding: vec3<f32>
+        }
 
-            struct VertexOutput {
-                @builtin(position) position: vec4<f32>,
-                @location(0) worldPos: vec3<f32>,
-                @location(1) normal: vec3<f32>
-            }
+        struct VertexOutput {
+            @builtin(position) position: vec4<f32>,
+            @location(0) worldPos: vec3<f32>,
+            @location(1) normal: vec3<f32>
+        }
 
-            @binding(0) @group(0) var<uniform> uniforms: Uniforms;
-            @binding(1) @group(0) var<uniform> model: ModelUniform;
-            @binding(3) @group(0) var<storage, read> lights: array<Light>;
+        @binding(0) @group(0) var<uniform> uniforms: Uniforms;
+        @binding(1) @group(0) var<uniform> model: ModelUniform;
+        @binding(3) @group(0) var<storage, read> lights: array<Light>;
 
-            @vertex
-            fn main(
-                @location(0) position: vec3<f32>,
-                @location(1) normal: vec3<f32>
-            ) -> VertexOutput {
-                var output: VertexOutput;
-                let worldPos = (model.modelMatrix * vec4<f32>(position, 1.0)).xyz;
-                output.worldPos = worldPos;
-                output.normal = normalize((model.modelMatrix * vec4<f32>(normal, 0.0)).xyz);
-                output.position = uniforms.projectionMatrix * uniforms.viewMatrix * vec4<f32>(worldPos, 1.0);
-                return output;
-            }
-        `;
+        @vertex fn main(
+            @location(0) position: vec3<f32>,
+            @location(1) normal: vec3<f32>
+        ) -> VertexOutput {
+            var output: VertexOutput;
+            let worldPos = (model.modelMatrix * vec4<f32>(position, 1.0)).xyz;
+            output.normal = normalize((model.normalMatrix * vec4<f32>(normal, 0.0)).xyz);
+            output.worldPos = worldPos;
+            output.position = uniforms.projectionMatrix * uniforms.viewMatrix * vec4<f32>(worldPos, 1.0);
+            return output;
+        }`;
 
     protected defaultMeshFragmentShader = `
-            struct ColorUniform {
-                color: vec4<f32>,
-            }
+        struct MaterialUniform {
+            color: vec4<f32>,
+            ambient: f32,
+            diffuse: f32,
+            specular: f32,
+            shininess: f32,
+        }
 
-            struct Light {
-                position: vec3<f32>,
-                padding: f32,
-                color: vec4<f32>,
-                intensity: f32,
-                _padding: vec3<f32>
-            }
+        struct Light {
+            position: vec3<f32>,
+            padding: f32,
+            color: vec4<f32>,
+            intensity: f32,
+            _padding: vec3<f32>
+        }
 
-            @binding(2) @group(0) var<uniform> colorUniform: ColorUniform;
-            @binding(3) @group(0) var<storage, read> lights: array<Light>;
-            @binding(4) @group(0) var<uniform> numLights: u32;
+        @binding(2) @group(0) var<uniform> material: MaterialUniform;
+        @binding(3) @group(0) var<storage, read> lights: array<Light>;
+        @binding(4) @group(0) var<uniform> numLights: u32;
 
-            @fragment
-            fn main(
-                @location(0) worldPos: vec3<f32>,
-                @location(1) normal: vec3<f32>
-            ) -> @location(0) vec4<f32> {
-                let N = normalize(normal);
-                var finalColor = vec3<f32>(0.0);
-                let ambient = 0.1;
+        @fragment fn main(
+            @location(0) worldPos: vec3<f32>,
+            @location(1) normal: vec3<f32>
+        ) -> @location(0) vec4<f32> {
+            let N = normalize(normal);
+            var finalColor = vec3<f32>(0.0);
+            
+            // Ambient calculation
+            finalColor += material.color.rgb * material.ambient;
+            
+            for(var i = 0u; i < numLights; i++) {
+                let L = normalize(lights[i].position - worldPos);
+                let V = normalize(-worldPos);
+                let H = normalize(L + V);
                 
-                // Add ambient light
-                finalColor += colorUniform.color.rgb * ambient;
+                // Diffuse
+                let NdotL = max(dot(N, L), 0.0);
+                let diffuse = NdotL * material.diffuse;
                 
-                // Calculate contribution from each light
-                for(var i = 0u; i < numLights; i++) {
-                    let L = normalize(lights[i].position - worldPos);
-                    let diffuse = max(dot(N, L), 0.0);
-                    
-                    // Add diffuse lighting
-                    finalColor += colorUniform.color.rgb * lights[i].color.rgb * 
-                                 diffuse * lights[i].intensity;
-                }
+                // Specular (Blinn-Phong)
+                let NdotH = max(dot(N, H), 0.0);
+                let specular = pow(NdotH, material.shininess) * material.specular;
                 
-                return vec4<f32>(finalColor, colorUniform.color.a);
+                // Apply gamma correction
+                let lightContribution = material.color.rgb * lights[i].color.rgb * 
+                    (diffuse + specular) * lights[i].intensity;
+                finalColor += pow(lightContribution, vec3<f32>(2.2));
             }
-        `;
+            
+            // Convert back to sRGB space
+            finalColor = pow(finalColor, vec3<f32>(1.0/2.2));
+            return vec4<f32>(finalColor, material.color.a);
+        }`
+        ;
 
     // Constructor for a standard 3D primitive
     constructor(transform?: Transform, material?: Material) {
 
-        // Create the model view buffer
+        // Create the model view + normal matrix buffer
         this.modelViewBuffer = WGPU_RENDERER.device.createBuffer({
-            size: 64, // 4x4 matrix
+            size: 128, // 2 x (4x4 matrix)
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
         });
 
@@ -137,6 +151,11 @@ export abstract class Mesh {
             };
         }
 
+        this.normalMatrixBuffer = WGPU_RENDERER.device.createBuffer({
+            size: 64, // mat4
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+        });
+
         // Update the model matrix buffer for shader use
         this.updateModelMatrixBuffer();
 
@@ -153,7 +172,7 @@ export abstract class Mesh {
             this.material = new Material();
         }
 
-        this.updateColorBuffer();
+        this.material.updateMaterialBuffer();
     }
 
     protected abstract initBuffers(): void;
@@ -169,14 +188,31 @@ export abstract class Mesh {
 
         const bindGroupLayout = WGPU_RENDERER.device.createBindGroupLayout({
             entries: [
-                { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
-                { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
-                { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
                 {
-                    binding: 3, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                    binding: 0,
+                    visibility: GPUShaderStage.VERTEX,
+                    buffer: { type: 'uniform' }
+                },
+                {
+                    binding: 1,
+                    visibility: GPUShaderStage.VERTEX,
+                    buffer: { type: 'uniform' }
+                },
+                {
+                    binding: 2,
+                    visibility: GPUShaderStage.FRAGMENT,
+                    buffer: { type: 'uniform' }
+                },
+                {
+                    binding: 3,
+                    visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
                     buffer: { type: 'read-only-storage' }
                 },
-                { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }
+                {
+                    binding: 4,
+                    visibility: GPUShaderStage.FRAGMENT,
+                    buffer: { type: 'uniform' }
+                }
             ]
         });
 
@@ -217,18 +253,33 @@ export abstract class Mesh {
     }
 
     render(renderPass: GPURenderPassEncoder): void {
+
+        this.material!.updateMaterialBuffer();
+        this.updateModelMatrixBuffer();
+
         if (!this.bindGroup) {
             this.bindGroup = WGPU_RENDERER.device.createBindGroup({
                 layout: this.pipeline.getBindGroupLayout(0),
                 entries: [
-                    { binding: 0, resource: { buffer: WGPU_RENDERER.camera.getUniformBuffer() } },
-                    { binding: 1, resource: { buffer: this.modelViewBuffer } },
-                    { binding: 2, resource: { buffer: this.colorBuffer } },
-                    { binding: 3, resource: { buffer: WGPU_RENDERER.sceneLights!.getLightsBuffer() } },
                     {
-                        binding: 4, resource: {
-                            buffer: WGPU_RENDERER.sceneLights!.getLightCountBuffer()
-                        }
+                        binding: 0,
+                        resource: { buffer: WGPU_RENDERER.camera.getUniformBuffer() }
+                    },
+                    {
+                        binding: 1,
+                        resource: { buffer: this.modelViewBuffer }
+                    },
+                    {
+                        binding: 2,
+                        resource: { buffer: this.material!.getMaterialBuffer() }
+                    },
+                    {
+                        binding: 3,
+                        resource: { buffer: WGPU_RENDERER.sceneLights!.getLightsBuffer() }
+                    },
+                    {
+                        binding: 4,
+                        resource: { buffer: WGPU_RENDERER.sceneLights!.getLightCountBuffer() }
                     }
                 ] as GPUBindGroupEntry[]
             });
@@ -268,33 +319,30 @@ export abstract class Mesh {
 
     protected updateModelMatrixBuffer(): void {
         const modelMatrix = mat4.create();
-        mat4.translate(modelMatrix, modelMatrix, this.transform!.position!);
+        mat4.fromRotationTranslationScale(
+            modelMatrix,
+            this.transform!.rotation!,
+            this.transform!.position!,
+            this.transform!.scale!
+        );
 
-        mat4.rotateZ(modelMatrix, modelMatrix, this.transform!.rotation![2]);
-        mat4.rotateY(modelMatrix, modelMatrix, this.transform!.rotation![1]);
-        mat4.rotateX(modelMatrix, modelMatrix, this.transform!.rotation![0]);
+        // Correct normal matrix calculation
+        const normalMatrix = mat4.create();
+        mat4.invert(normalMatrix, modelMatrix);
+        mat4.transpose(normalMatrix, normalMatrix);
 
-        mat4.scale(modelMatrix, modelMatrix, this.transform!.scale!);
+        // Scale compensation for non-uniform scaling
+        const scale = this.transform!.scale!;
+        const scaleCompensation = 1.0 / Math.sqrt(scale[0] * scale[0] + scale[1] * scale[1] + scale[2] * scale[2]);
+        mat4.scale(normalMatrix, normalMatrix, [scaleCompensation, scaleCompensation, scaleCompensation]);
 
-        this.modelViewMatrix = modelMatrix;
-        WGPU_RENDERER.device.queue.writeBuffer(this.modelViewBuffer!, 0, this.modelViewMatrix as Float32Array);
+        WGPU_RENDERER.device.queue.writeBuffer(this.modelViewBuffer!, 0, modelMatrix as Float32Array);
+        WGPU_RENDERER.device.queue.writeBuffer(this.modelViewBuffer!, 64, normalMatrix as Float32Array);
     }
 
-    // Update the mesh's color
-    public setColor(color: Color): void {
-        this.material!.color = color;
-        this.updateColorBuffer();
-    }
-
-    protected updateColorBuffer(): void {
-        const { material } = this;
-        const { color } = material!;
-        WGPU_RENDERER.device.queue.writeBuffer(this.colorBuffer!, 0, new Float32Array([
-            color.r,
-            color.g,
-            color.b,
-            color.a
-        ]));
+    public setMaterial(material: Material): void {
+        this.material = material;
+        this.material.updateMaterialBuffer();
     }
 
     public translate(x: number, y: number, z: number): void {
@@ -317,5 +365,18 @@ export abstract class Mesh {
         const { scale } = this.transform!;
         vec3.multiply(scale!, scale!, vec3.fromValues(x, y, z));
         this.updateModelMatrixBuffer();
+    }
+
+    public getVertexBuffer(): GPUBuffer {
+        return this.vertexBuffer!;
+    }
+
+    public updateVertexBuffer(vertices: Float32Array): void {
+        this.vertices = vertices;
+        WGPU_RENDERER.device.queue.writeBuffer(
+            this.getVertexBuffer(),
+            0,
+            vertices
+        );
     }
 }

@@ -35,10 +35,11 @@ export class Icosphere extends Mesh {
 
         // Convert base vertices to flat array with colors
         baseVertices.forEach(v => {
-            const normalized = vec3.normalize(vec3.create(), vec3.fromValues(v[0], v[1], v[2]));
+            const normalized = vec3.normalize(vec3.create(),
+                vec3.fromValues(v[0], v[1], v[2]));
             vertices.push(
                 normalized[0], normalized[1], normalized[2],  // position
-                1.0, 0.0, 0.0                                // color
+                normalized[0], normalized[1], normalized[2]   // normal
             );
         });
 
@@ -106,25 +107,24 @@ export class Icosphere extends Mesh {
         WGPU_RENDERER.device.queue.writeBuffer(this.indexBuffer, 0, this.indices);
     }
 
-    private getMidpoint(v1: number[], v2: number[], vertices: number[], vertexMap: Map<string, number>): number {
-        // Create a key for the edge
+    private getMidpoint(v1: number[], v2: number[], vertices: number[],
+        vertexMap: Map<string, number>): number {
         const key = [v1, v2].sort().toString();
 
-        // Check if we already created this vertex
         if (vertexMap.has(key)) {
             return vertexMap.get(key)!;
         }
 
-        // Calculate new vertex
         const midpoint = vec3.create();
-        vec3.add(midpoint, vec3.fromValues(v1[0], v1[1], v1[2]), vec3.fromValues(v2[0], v2[1], v2[2]));
+        vec3.add(midpoint,
+            vec3.fromValues(v1[0], v1[1], v1[2]),
+            vec3.fromValues(v2[0], v2[1], v2[2]));
         vec3.normalize(midpoint, midpoint);
 
-        // Add new vertex
         const index = vertices.length / 6;
         vertices.push(
             midpoint[0], midpoint[1], midpoint[2],  // position
-            1.0, 0.0, 0.0                           // color
+            midpoint[0], midpoint[1], midpoint[2]   // normal
         );
 
         vertexMap.set(key, index);

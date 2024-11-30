@@ -24,7 +24,7 @@ export class Camera {
 
         // Create uniform buffer
         this.uniformBuffer = device.createBuffer({
-            size: 128,
+            size: 144,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
         });
 
@@ -47,6 +47,8 @@ export class Camera {
             0,
             this.viewMatrix as Float32Array
         );
+
+        this.updateViewPosition();
     }
 
     private updateProjectionMatrix(): void {
@@ -65,6 +67,15 @@ export class Camera {
             this.projectionMatrix as Float32Array
         );
     }
+
+    updateViewPosition(): void {
+        this.device.queue.writeBuffer(
+            this.uniformBuffer,
+            128,
+            this.position as Float32Array
+        );
+    }
+
 
     updateAspectRatio(aspect: number): void {
         this.aspect = aspect;
