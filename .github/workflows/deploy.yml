@@ -33,4 +33,4 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist # Point to your dist directory
-          exclude_assets: 'node_modules/**,.github/**,src/**,tsconfig.json,package*.json'
+          exclude_assets: 'node_modules/**,.github/**'
