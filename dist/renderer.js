@@ -82,7 +82,7 @@ export class Renderer {
         });
         this.depthTexture.view = this.depthTexture.texture.createView();
         // Create camera & controls
-        this.camera = new Camera(this.device, vec3.fromValues(0, 0, 0), 60 * Math.PI / 180, // fov in radians
+        this.camera = new Camera(this.device, vec3.fromValues(0, 0, 3), 60 * Math.PI / 180, // fov in radians
         this.canvas.width / this.canvas.height, // aspect ratio
         0.1, // near
         100.0 // far
