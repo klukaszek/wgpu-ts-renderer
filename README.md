@@ -8,5 +8,6 @@ Included primitives:
 - Cubes
 - Icospheres
 - Planes
+- GPU Accelerated Point Clouds.
 
 ![image](./static/image.png)
