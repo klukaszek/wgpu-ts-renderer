@@ -18,7 +18,6 @@
     "typescript": "^5.7.2"
   },
   "dependencies": {
-    "gl-matrix": "^3.4.3",
-    "vite": "^6.0.1"
+    "gl-matrix": "^3.4.3"
   }
 }
