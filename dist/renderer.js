@@ -25,6 +25,7 @@ export class Renderer {
             format: 'depth24plus'
         };
         this.lastFrameTime = 0;
+        this.animateRotation = true;
     }
     // Initialize the renderer with a controllable first person camera.
     async init() {
@@ -46,7 +47,6 @@ export class Renderer {
                 maxBufferSize: maxBufferBindingSize,
             },
         });
-        console.log(this.device.limits.maxStorageBufferBindingSize);
         this.context = this.canvas.getContext('webgpu');
         // Resize the canvas to fill the window
         this.canvas.width = window.innerWidth;
@@ -122,7 +122,9 @@ export class Renderer {
             }
         });
         this.pointCloud.render(renderPass);
-        this.pointCloud.rotate(0, deltaTime, 0);
+        if (this.animateRotation) {
+            this.pointCloud.rotate(0, deltaTime * 0.2, 0);
+        }
         // End the render pass
         renderPass.end();
         // Submit the commands to the GPU

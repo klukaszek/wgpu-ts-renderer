@@ -3,6 +3,7 @@
 // Date: 11/29/2024
 //
 // Description: This file contains the InputManager class which is responsible for handling user input and updating the camera position.
+import { WGPU_RENDERER } from './main.js';
 export class InputManager {
     constructor(camera, canvas) {
         this.camera = camera;
@@ -14,6 +15,17 @@ export class InputManager {
         this.currentPitch = 0;
         this.MAX_PITCH = Math.PI / 2 - 0.1;
         this.setupEventListeners();
+        console.log(`Controls:
+        - W: Move Forward
+        - S: Move Backward
+        - A: Move Left
+        - D: Move Right
+        - Space: Move Up
+        - C: Move Down
+        - R: Reset Camera
+        - Z: Move to 0.3, 0, 0
+        - X: Move to 0, 0, 0
+        - P: Toggle Rotation`);
     }
     setupEventListeners() {
         document.addEventListener('keydown', (e) => this.keys.add(e.key.toLowerCase()));
@@ -49,9 +61,9 @@ export class InputManager {
             this.camera.moveRight(this.MOVEMENT_SPEED);
         if (this.keys.has('a'))
             this.camera.moveRight(-this.MOVEMENT_SPEED);
-        if (this.keys.has('e'))
+        if (this.keys.has(' '))
             this.camera.moveUp(this.MOVEMENT_SPEED);
-        if (this.keys.has('q'))
+        if (this.keys.has('c'))
             this.camera.moveUp(-this.MOVEMENT_SPEED);
         if (this.keys.has('r')) {
             this.camera.reset();
@@ -62,6 +74,9 @@ export class InputManager {
         }
         if (this.keys.has('x')) {
             this.camera.setPosition(0, 0, 0);
+        }
+        if (this.keys.has('p')) {
+            WGPU_RENDERER.animateRotation = !WGPU_RENDERER.animateRotation;
         }
     }
 }
