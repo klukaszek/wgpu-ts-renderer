@@ -40,9 +40,6 @@ jobs:
       - name: Build TypeScript app
         run: |
           pnpm run build
-          # Force add the dist directory even if it's in .gitignore
-          git add dist -f
-          ls -la dist  # Verify dist contents
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
@@ -52,4 +49,4 @@ jobs:
           exclude_assets: 'node_modules/**,.github/**,src/**,tsconfig.json,package*.json,pnpm-lock.yaml'
           enable_jekyll: false
           keep_files: false
-          force_orphan: true  # Create a new history for gh-pages
+
