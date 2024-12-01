@@ -1,5 +1,4 @@
 name: Deploy TypeScript App
-
 on:
   push:
     branches:
@@ -8,7 +7,6 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-
     steps:
       # Step 1: Checkout repository
       - name: Checkout code
@@ -18,23 +16,21 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 18 # Specify the Node.js version you need
+          node-version: 18
+          cache: 'npm' # Enable npm caching
 
       # Step 3: Install dependencies
       - name: Install dependencies
-        run: |
-          npm install typescript gl-matrix
-          npm install
+        run: npm ci # Uses package-lock.json for exact versions
 
       # Step 4: Build the app
       - name: Build TypeScript app
-        run: |
-          npx tsc # Compiles your TypeScript to JavaScript
-          npm run build # Assumes you have a build script defined in package.json
+        run: npm run build # Use your package.json build script
 
       # Step 5: Deploy to GitHub Pages
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./ # Path to your built app
+          publish_dir: ./dist # Point to your dist directory
+          exclude_assets: 'node_modules/**,.github/**,src/**,tsconfig.json,package*.json'
