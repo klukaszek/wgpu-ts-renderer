@@ -4,7 +4,6 @@
 //
 // Description: This file contains the InputManager class which is responsible for handling user input and updating the camera position.
 
-import { vec3 } from 'gl-matrix';
 import { Camera } from './camera.js';
 import { WGPU_RENDERER } from './main.js';
 
@@ -23,6 +22,18 @@ export class InputManager {
         private canvas: HTMLCanvasElement
     ) {
         this.setupEventListeners();
+
+        console.log(`Controls:
+        - W: Move Forward
+        - S: Move Backward
+        - A: Move Left
+        - D: Move Right
+        - Space: Move Up
+        - C: Move Down
+        - R: Reset Camera
+        - Z: Move to 0.3, 0, 0
+        - X: Move to 0, 0, 0
+        - P: Toggle Rotation`);
     }
 
     private setupEventListeners(): void {
@@ -58,8 +69,8 @@ export class InputManager {
         if (this.keys.has('s')) this.camera.moveForward(-this.MOVEMENT_SPEED);
         if (this.keys.has('d')) this.camera.moveRight(this.MOVEMENT_SPEED);
         if (this.keys.has('a')) this.camera.moveRight(-this.MOVEMENT_SPEED);
-        if (this.keys.has('e')) this.camera.moveUp(this.MOVEMENT_SPEED);
-        if (this.keys.has('q')) this.camera.moveUp(-this.MOVEMENT_SPEED);
+        if (this.keys.has(' ')) this.camera.moveUp(this.MOVEMENT_SPEED);
+        if (this.keys.has('c')) this.camera.moveUp(-this.MOVEMENT_SPEED);
         if (this.keys.has('r')) {
             this.camera.reset();
             this.currentPitch = 0;
@@ -69,6 +80,9 @@ export class InputManager {
         }
         if (this.keys.has('x')) {
             this.camera.setPosition(0, 0, 0);
+        }
+        if (this.keys.has('p')) {
+            WGPU_RENDERER.animateRotation = !WGPU_RENDERER.animateRotation;
         }
     }
 }

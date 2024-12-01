@@ -82,6 +82,7 @@ export class Renderer {
     private icosphere!: Icosphere;
     private plane!: Plane;
     private pointCloud!: PointCloud;
+    public animateRotation: boolean = true;
 
     constructor(private canvas: HTMLCanvasElement) { }
 
@@ -100,6 +101,7 @@ export class Renderer {
         this.limits = this.adapter.limits;
 
         const maxBufferBindingSize = this.adapter.limits.maxStorageBufferBindingSize;
+
         // Create a GPUDevice
         // I specified some limits here to ensure that the device can handle large buffers
         this.device = await this.adapter.requestDevice({
@@ -108,8 +110,6 @@ export class Renderer {
                 maxBufferSize: maxBufferBindingSize,
             },
         });
-
-        console.log(this.device.limits.maxStorageBufferBindingSize);
 
         this.context = this.canvas.getContext('webgpu') as GPUCanvasContext;
 
@@ -202,7 +202,10 @@ export class Renderer {
         });
 
         this.pointCloud.render(renderPass);
-        this.pointCloud.rotate(0, deltaTime, 0);
+
+        if (this.animateRotation) {
+            this.pointCloud.rotate(0, deltaTime * 0.2, 0);
+        }
 
         // End the render pass
         renderPass.end();
