@@ -6,8 +6,6 @@ export class Camera {
     private viewMatrix: mat4;
     private projectionMatrix: mat4;
     private uniformBuffer: GPUBuffer;
-    private currentPitch = 0;
-    private readonly MAX_PITCH = Math.PI / 2 - 0.1;
 
     constructor(
         private device: GPUDevice,
@@ -135,6 +133,11 @@ export class Camera {
         // Normalize to prevent accumulation of rounding errors
         quat.normalize(this.rotation, this.rotation);
 
+        this.updateViewMatrix();
+    }
+
+    setPosition(x: number, y: number, z: number): void {
+        vec3.set(this.position, x, y, z);
         this.updateViewMatrix();
     }
 

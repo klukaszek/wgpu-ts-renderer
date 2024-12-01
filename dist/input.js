@@ -8,14 +8,11 @@ export class InputManager {
         this.camera = camera;
         this.canvas = canvas;
         this.keys = new Set();
-        this.MOVEMENT_SPEED = 0.1;
+        this.MOVEMENT_SPEED = 0.01;
         // Camera Control Variables
         this.MOUSE_SENSITIVITY = 0.002;
         this.currentPitch = 0;
         this.MAX_PITCH = Math.PI / 2 - 0.1;
-        // Screenshot Variables
-        this.lastScreenshotTime = 0;
-        this.SCREENSHOT_COOLDOWN = 2000; // 2 seconds cooldown
         this.setupEventListeners();
     }
     setupEventListeners() {
@@ -59,6 +56,12 @@ export class InputManager {
         if (this.keys.has('r')) {
             this.camera.reset();
             this.currentPitch = 0;
+        }
+        if (this.keys.has('z')) {
+            this.camera.setPosition(0, 0.3, 0);
+        }
+        if (this.keys.has('x')) {
+            this.camera.setPosition(0, 0, 0);
         }
     }
 }

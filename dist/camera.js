@@ -6,8 +6,6 @@ export class Camera {
         this.aspect = aspect;
         this.near = near;
         this.far = far;
-        this.currentPitch = 0;
-        this.MAX_PITCH = Math.PI / 2 - 0.1;
         this.position = initialPosition;
         this.rotation = quat.create();
         this.viewMatrix = mat4.create();
@@ -66,6 +64,10 @@ export class Camera {
         quat.multiply(this.rotation, this.rotation, pitchQuat);
         // Normalize to prevent accumulation of rounding errors
         quat.normalize(this.rotation, this.rotation);
+        this.updateViewMatrix();
+    }
+    setPosition(x, y, z) {
+        vec3.set(this.position, x, y, z);
         this.updateViewMatrix();
     }
     getUniformBuffer() {

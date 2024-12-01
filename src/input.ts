@@ -4,22 +4,19 @@
 //
 // Description: This file contains the InputManager class which is responsible for handling user input and updating the camera position.
 
+import { vec3 } from 'gl-matrix';
 import { Camera } from './camera.js';
 import { WGPU_RENDERER } from './main.js';
 
 export class InputManager {
     private keys: Set<string> = new Set();
 
-    private readonly MOVEMENT_SPEED = 0.1;
+    private readonly MOVEMENT_SPEED = 0.01;
 
     // Camera Control Variables
     private readonly MOUSE_SENSITIVITY = 0.002;
     private currentPitch = 0;
     private readonly MAX_PITCH = Math.PI / 2 - 0.1;
-
-    // Screenshot Variables
-    private lastScreenshotTime = 0;
-    private readonly SCREENSHOT_COOLDOWN = 2000; // 2 seconds cooldown
 
     constructor(
         private camera: Camera,
@@ -66,6 +63,12 @@ export class InputManager {
         if (this.keys.has('r')) {
             this.camera.reset();
             this.currentPitch = 0;
+        }
+        if (this.keys.has('z')) {
+            this.camera.setPosition(0, 0.3, 0);
+        }
+        if (this.keys.has('x')) {
+            this.camera.setPosition(0, 0, 0);
         }
     }
 }
