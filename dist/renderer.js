@@ -25,6 +25,8 @@ export class Renderer {
             format: 'depth24plus'
         };
         this.lastFrameTime = 0;
+        this.frameCount = 0;
+        this.drawing = false;
         this.animateRotation = true;
     }
     // Initialize the renderer with a controllable first person camera.
@@ -45,6 +47,7 @@ export class Renderer {
             requiredLimits: {
                 maxStorageBufferBindingSize: maxBufferBindingSize,
                 maxBufferSize: maxBufferBindingSize,
+                maxComputeWorkgroupStorageSize: 32768,
             },
         });
         this.context = this.canvas.getContext('webgpu');
@@ -84,13 +87,18 @@ export class Renderer {
         // Create camera & controls
         this.camera = new Camera(this.device, vec3.fromValues(0, 0, 3), 60 * Math.PI / 180, // fov in radians
         this.canvas.width / this.canvas.height, // aspect ratio
-        0.1, // near
+        0.05, // near
         100.0 // far
         );
         // Create controls manager
         this.controls = new InputManager(this.camera, this.canvas);
         this.pointCloud = new CIELUVPointCloud(256);
+        //this.pointCloud = new ParticleSystem(1000000);
         this.pointCloud.generateCloud();
+        // Set up simulation parameters
+        //(this.pointCloud as ParticleSystem).setGravity(vec3.fromValues(0, -9.81, 0));
+        //(this.pointCloud as ParticleSystem).setEmitterPosition(vec3.fromValues(0, 10, 0));
+        //(this.pointCloud as ParticleSystem).setVortex(1.0, vec3.fromValues(0, 1, 0));
     }
     // Perform a render pass and submit it to the GPU
     // This function is called every frame
@@ -98,6 +106,7 @@ export class Renderer {
     render(timestamp) {
         const deltaTime = (timestamp - this.lastFrameTime) / 1000;
         this.lastFrameTime = timestamp;
+        //(this.pointCloud as ParticleSystem).update(deltaTime);
         // Before we render a new frame, poll for user input and update state accordingly
         this.controls.update();
         // Create a command encoder to encode the commands for the GPU
@@ -129,5 +138,12 @@ export class Renderer {
         renderPass.end();
         // Submit the commands to the GPU
         this.device.queue.submit([commandEncoder.finish()]);
+        this.frameCount++;
+        if (this.frameCount === Number.MAX_SAFE_INTEGER - 1) {
+            this.frameCount = 0;
+        }
+    }
+    get framecount() {
+        return this.frameCount;
     }
 }

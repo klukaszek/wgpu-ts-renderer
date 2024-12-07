@@ -3,13 +3,13 @@ export class CIELUVPointCloud extends PointCloud {
     constructor(gridSize) {
         const numPoints = gridSize * gridSize * gridSize;
         super(numPoints);
-        // RGB Grid Generation Kernel
-        this.rgbGridKernel = `
+        // LUV Point Cloud Kernel
+        this.luvKernel = `
     @group(0) @binding(0) var<storage, read_write> vertices: array<f32>;
 
-    @compute @workgroup_size(64)
+    @compute @workgroup_size(256)
     fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-        let index = global_id.x + (global_id.y * 65535u * 64u);
+        let index = global_id.x + (global_id.y * 65535u * 256u);
         let grid_size = u32(pow(f32(arrayLength(&vertices) / 6), 1.0/3.0));
         if (index >= arrayLength(&vertices) / 6) {
             return;
@@ -107,7 +107,7 @@ export class CIELUVPointCloud extends PointCloud {
     }`;
     }
     generateCloud() {
-        const pipeline = this.createComputePipeline(this.rgbGridKernel);
+        const pipeline = this.createComputePipeline(this.luvKernel);
         this.compute(pipeline, this.numPoints);
         // The point cloud will technically be oriented incorrectly. Lets orient L along Y, u along X, and v along Z.
         this.rotate(0, 0, Math.PI / 2);

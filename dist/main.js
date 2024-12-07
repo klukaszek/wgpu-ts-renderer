@@ -1,7 +1,10 @@
 import { Renderer } from './renderer.js';
+import { Sidebar } from './ui/sidebar.js';
 const canvas = document.querySelector('canvas');
+const sidebar = new Sidebar();
 const renderer = new Renderer(canvas);
 export const WGPU_RENDERER = renderer;
+export const WGPU_SIDEBAR = sidebar;
 // Program entrypoint
 async function main() {
     if (!canvas) {
@@ -9,6 +12,7 @@ async function main() {
     }
     // Initialize the WebGPU renderer context 
     await renderer.init();
+    sidebar.addControls();
     function frame(timestamp) {
         renderer.render(timestamp);
         requestAnimationFrame(frame);
