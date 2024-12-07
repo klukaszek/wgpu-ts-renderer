@@ -15,6 +15,7 @@ import { Material } from './material.js';
 import { Noise } from './noise.js';
 import { FibonacciLattice } from './pointclouds/fibonacci.js';
 import { CIELUVPointCloud } from './pointclouds/cieluv.js';
+import { ParticleSystem } from './pointclouds/particlesystem.js';
 import { PointCloud } from './pointclouds/pointcloud.js';
 
 export interface Transform {
@@ -55,7 +56,7 @@ export class Renderer {
     public format!: GPUTextureFormat;
 
     public camera!: Camera;
-    private controls!: InputManager;
+    public controls!: InputManager;
 
     public resolve: Resolve = {
         texture: {} as GPUTexture,
@@ -75,6 +76,8 @@ export class Renderer {
     };
 
     private lastFrameTime: number = 0;
+    private frameCount: number = 0;
+    private drawing: boolean = false;
 
     // Scene objects
     public sceneLights: SceneLights | undefined;
@@ -108,6 +111,7 @@ export class Renderer {
             requiredLimits: {
                 maxStorageBufferBindingSize: maxBufferBindingSize,
                 maxBufferSize: maxBufferBindingSize,
+                maxComputeWorkgroupStorageSize: 32768,
             },
         });
 
@@ -156,14 +160,20 @@ export class Renderer {
             vec3.fromValues(0, 0, 3),
             60 * Math.PI / 180,    // fov in radians
             this.canvas.width / this.canvas.height, // aspect ratio
-            0.1,                   // near
+            0.05,                   // near
             100.0                  // far
         );
 
         // Create controls manager
         this.controls = new InputManager(this.camera, this.canvas);
         this.pointCloud = new CIELUVPointCloud(256);
+        //this.pointCloud = new ParticleSystem(1000000);
         this.pointCloud.generateCloud();
+
+        // Set up simulation parameters
+        //(this.pointCloud as ParticleSystem).setGravity(vec3.fromValues(0, -9.81, 0));
+        //(this.pointCloud as ParticleSystem).setEmitterPosition(vec3.fromValues(0, 10, 0));
+        //(this.pointCloud as ParticleSystem).setVortex(1.0, vec3.fromValues(0, 1, 0));
     }
 
     // Perform a render pass and submit it to the GPU
@@ -173,6 +183,8 @@ export class Renderer {
 
         const deltaTime = (timestamp - this.lastFrameTime) / 1000;
         this.lastFrameTime = timestamp;
+
+        //(this.pointCloud as ParticleSystem).update(deltaTime);
 
         // Before we render a new frame, poll for user input and update state accordingly
         this.controls.update();
@@ -212,5 +224,15 @@ export class Renderer {
 
         // Submit the commands to the GPU
         this.device.queue.submit([commandEncoder.finish()]);
+        
+        this.frameCount++;
+
+        if (this.frameCount === Number.MAX_SAFE_INTEGER - 1) {
+            this.frameCount = 0;
+        }
+    }
+
+    public get framecount(): number {
+        return this.frameCount;
     }
 }

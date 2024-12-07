@@ -7,26 +7,26 @@ import { Transform } from '../renderer.js';
 import { WGPU_RENDERER } from '../main.js';
 
 export abstract class PointCloud {
-    private transform: Transform;
-    private modelMatrix: mat4 = mat4.create();
-    private vertexBuffer: GPUBuffer;
-    private modelMatrixBuffer: GPUBuffer;
-    private transformUniformBuffer: GPUBuffer;
+    protected transform: Transform;
+    protected modelMatrix: mat4 = mat4.create();
+    protected vertexBuffer: GPUBuffer;
+    protected modelMatrixBuffer: GPUBuffer;
+    protected transformUniformBuffer: GPUBuffer;
 
-    private renderBindGroup: GPUBindGroup | null = null;
-    private renderPipeline: GPURenderPipeline | null = null;
+    protected renderBindGroup: GPUBindGroup | null = null;
+    protected renderPipeline: GPURenderPipeline | null = null;
 
-    private computeBindGroup: GPUBindGroup | null = null;
-    private transformPipeline: GPUComputePipeline | null = null;
+    protected computeBindGroup: GPUBindGroup | null = null;
+    protected transformPipeline: GPUComputePipeline | null = null;
     protected numPoints: number;
 
     // Basic initialization kernel
     private initKernel = `
         @group(0) @binding(0) var<storage, read_write> vertices: array<f32>;
 
-        @compute @workgroup_size(64)
+        @compute @workgroup_size(256)
         fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-            let index = global_id.x + (global_id.y * 65535u * 64u);
+            let index = global_id.x + (global_id.y * 65535u * 256u);
             if (index >= arrayLength(&vertices)) {
                 return;
             }
@@ -48,43 +48,54 @@ export abstract class PointCloud {
         }
 
         fn rotatePoint(p: vec3<f32>, r: vec3<f32>) -> vec3<f32> {
-            let cx = cos(r.x);
-            let sx = sin(r.x);
-            let cy = cos(r.y);
-            let sy = sin(r.y);
-            let cz = cos(r.z);
-            let sz = sin(r.z);
-
+            
             // Apply rotation matrices in XYZ order
             var result = p;
+
+            if (r.x != 0.0) {
+                let cx = cos(r.x);
+                let sx = sin(r.x);
+
+                // Rotate X
+                result = vec3<f32>(
+                    result.x,
+                    result.y * cx - result.z * sx,
+                    result.y * sx + result.z * cx
+                );
+            }
             
-            // Rotate X
-            result = vec3<f32>(
-                result.x,
-                result.y * cx - result.z * sx,
-                result.y * sx + result.z * cx
-            );
+
+            if (r.y != 0.0) {
+                let cy = cos(r.y);
+                let sy = sin(r.y);
+
+                // Rotate Y
+                result = vec3<f32>(
+                    result.x * cy + result.z * sy,
+                    result.y,
+                    -result.x * sy + result.z * cy
+                );
+            }
+    
+
+            if (r.z != 0.0) {
+                let cz = cos(r.z);
+                let sz = sin(r.z);
             
-            // Rotate Y
-            result = vec3<f32>(
-                result.x * cy + result.z * sy,
-                result.y,
-                -result.x * sy + result.z * cy
-            );
-            
-            // Rotate Z
-            result = vec3<f32>(
-                result.x * cz - result.y * sz,
-                result.x * sz + result.y * cz,
-                result.z
-            );
+                // Rotate Z
+                result = vec3<f32>(
+                    result.x * cz - result.y * sz,
+                    result.x * sz + result.y * cz,
+                    result.z
+                );
+            }
 
             return result;
         }
 
-        @compute @workgroup_size(64)
+        @compute @workgroup_size(256)
         fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-            let index = global_id.x + (global_id.y * 65535u * 64u);
+            let index = global_id.x + (global_id.y * 65535u * 256u);
             if (index >= arrayLength(&vertices) / 6) {
                 return;
             }
@@ -156,18 +167,21 @@ export abstract class PointCloud {
         };
 
         this.vertexBuffer = WGPU_RENDERER.device.createBuffer({
-            size: numPoints * 6 * Float32Array.BYTES_PER_ELEMENT,
+            size: numPoints * 6 * Float32Array.BYTES_PER_ELEMENT, // 3 floats for position, 3 for color
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX,
+            label: 'Point Cloud Vertex Buffer'
         });
 
         this.transformUniformBuffer = WGPU_RENDERER.device.createBuffer({
             size: 48, // 3 vec3s + padding
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            label: 'Transform Uniform Buffer'
         });
 
         this.modelMatrixBuffer = WGPU_RENDERER.device.createBuffer({
             size: 64,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            label: 'Model Matrix Buffer'
         });
 
         this.transformPipeline = this.createComputePipeline(this.transformKernel);
@@ -277,18 +291,18 @@ export abstract class PointCloud {
             }
         });
     }
-    
+
     // Initialize our storage buffer with zeros using the init kernel
     private initializeBuffer(): void {
         const pipeline = this.createComputePipeline(this.initKernel);
         this.compute(pipeline, this.vertexBuffer.size / 4); // Size in floats
     }
-    
+
     // Perform a compute pass with the given pipeline and number of work items
     protected compute(pipeline: GPUComputePipeline, workItems: number): void {
         const bindGroup = this.computeBindGroup!;
 
-        const WORKGROUP_SIZE = 64;
+        const WORKGROUP_SIZE = 256;
         const totalWorkgroups = Math.ceil(workItems / WORKGROUP_SIZE);
         const xGroups = Math.min(totalWorkgroups, 65535);
         const yGroups = Math.ceil(totalWorkgroups / 65535);
@@ -319,7 +333,7 @@ export abstract class PointCloud {
         // Create pipeline and bind group for transform
         this.compute(this.transformPipeline!, this.numPoints);
     }
-    
+
     // Update the model matrix buffer with the current transform
     private updateModelMatrix(): void {
         mat4.fromRotationTranslationScale(
@@ -337,6 +351,7 @@ export abstract class PointCloud {
 
     public render(renderPass: GPURenderPassEncoder): void {
         if (!this.renderBindGroup) {
+            console.log('Creating bind group');
             this.renderBindGroup = WGPU_RENDERER.device.createBindGroup({
                 layout: this.renderPipeline!.getBindGroupLayout(0),
                 entries: [
