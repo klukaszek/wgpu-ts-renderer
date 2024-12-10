@@ -9,6 +9,7 @@ export class PointCloud {
         this.renderBindGroup = null;
         this.renderPipeline = null;
         this.computeBindGroup = null;
+        this.transformBindGroup = null;
         this.transformPipeline = null;
         // Basic initialization kernel
         this.initKernel = `
@@ -23,6 +24,12 @@ export class PointCloud {
             vertices[index] = 0.0;
         }
     `;
+        this.initBGLayout = WGPU_RENDERER.device.createBindGroupLayout({
+            entries: [
+                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }
+            ],
+            label: 'Init Bind Group Layout'
+        });
         this.transformKernel = `
         @group(0) @binding(0) var<storage, read_write> vertices: array<f32>;
         @group(0) @binding(1) var<uniform> transform: Transform;
@@ -144,6 +151,13 @@ export class PointCloud {
             return vec4f(color, 1.0);
         }
     `;
+        this.transformBGLayout = WGPU_RENDERER.device.createBindGroupLayout({
+            entries: [
+                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+                { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } }
+            ],
+            label: 'Transform Bind Group Layout'
+        });
         this.numPoints = numPoints;
         this.transform = transform || {
             position: vec3.create(),
@@ -165,14 +179,16 @@ export class PointCloud {
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             label: 'Model Matrix Buffer'
         });
-        this.transformPipeline = this.createComputePipeline(this.transformKernel);
-        this.computeBindGroup = WGPU_RENDERER.device.createBindGroup({
+        this.transformPipeline = this.createComputePipeline(this.transformKernel, [this.transformBGLayout], "Transform Pipeline");
+        this.transformBindGroup = WGPU_RENDERER.device.createBindGroup({
             layout: this.transformPipeline.getBindGroupLayout(0),
             entries: [
                 { binding: 0, resource: { buffer: this.vertexBuffer } },
                 { binding: 1, resource: { buffer: this.transformUniformBuffer } }
             ]
         });
+        // For basic point cloud rendering, we set our compute bind group to the transform bind group
+        this.computeBindGroup = this.transformBindGroup;
         this.initializeBuffer();
         this.initRenderPipeline();
         this.updateModelMatrix();
@@ -195,11 +211,13 @@ export class PointCloud {
         });
         this.renderPipeline = WGPU_RENDERER.device.createRenderPipeline({
             layout: WGPU_RENDERER.device.createPipelineLayout({
-                bindGroupLayouts: [bindGroupLayout]
+                bindGroupLayouts: [bindGroupLayout],
+                label: 'PointCloud Render Pipeline Layout'
             }),
             vertex: {
                 module: WGPU_RENDERER.device.createShaderModule({
-                    code: this.vertexShader
+                    code: this.vertexShader,
+                    label: 'PointCloud Vertex Shader'
                 }),
                 entryPoint: 'main',
                 buffers: [{
@@ -220,7 +238,8 @@ export class PointCloud {
             },
             fragment: {
                 module: WGPU_RENDERER.device.createShaderModule({
-                    code: this.fragmentShader
+                    code: this.fragmentShader,
+                    label: 'PointCloud Fragment Shader'
                 }),
                 entryPoint: 'main',
                 targets: [{ format: navigator.gpu.getPreferredCanvasFormat() }]
@@ -239,29 +258,16 @@ export class PointCloud {
             }
         });
     }
-    createComputePipeline(shader) {
-        const bindGroupLayout = WGPU_RENDERER.device.createBindGroupLayout({
-            entries: [
-                {
-                    binding: 0,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: 'storage' }
-                },
-                {
-                    binding: 1,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: 'uniform' }
-                }
-            ],
-            label: 'Compute Bind Group Layout'
-        });
+    createComputePipeline(shader, BGLs, label) {
         return WGPU_RENDERER.device.createComputePipeline({
             layout: WGPU_RENDERER.device.createPipelineLayout({
-                bindGroupLayouts: [bindGroupLayout]
+                bindGroupLayouts: BGLs,
+                label: label?.concat(' Pipeline Layout')
             }),
             compute: {
                 module: WGPU_RENDERER.device.createShaderModule({
-                    code: shader
+                    code: shader,
+                    label: label || 'Unnamed Compute Shader'
                 }),
                 entryPoint: 'main'
             }
@@ -269,7 +275,13 @@ export class PointCloud {
     }
     // Initialize our storage buffer with zeros using the init kernel
     initializeBuffer() {
-        const pipeline = this.createComputePipeline(this.initKernel);
+        const pipeline = this.createComputePipeline(this.initKernel, [this.initBGLayout], "Point Cloud Init Kernel");
+        this.computeBindGroup = WGPU_RENDERER.device.createBindGroup({
+            layout: pipeline.getBindGroupLayout(0),
+            entries: [
+                { binding: 0, resource: { buffer: this.vertexBuffer } }
+            ]
+        });
         this.compute(pipeline, this.vertexBuffer.size / 4); // Size in floats
     }
     // Perform a compute pass with the given pipeline and number of work items
@@ -288,7 +300,7 @@ export class PointCloud {
         WGPU_RENDERER.device.queue.submit([commandEncoder.finish()]);
     }
     // Apply a transformation to the point cloud using a compute shader
-    applyTransform(translation, rotation, scale) {
+    async applyTransform(translation, rotation, scale) {
         // Update transform uniform buffer
         const transformData = new Float32Array([
             ...translation, 0.0, // Add padding
@@ -296,15 +308,16 @@ export class PointCloud {
             ...scale, 0.0 // Add padding
         ]);
         WGPU_RENDERER.device.queue.writeBuffer(this.transformUniformBuffer, 0, transformData);
+        this.computeBindGroup = this.transformBindGroup;
         // Create pipeline and bind group for transform
         this.compute(this.transformPipeline, this.numPoints);
     }
     // Update the model matrix buffer with the current transform
-    updateModelMatrix() {
+    async updateModelMatrix() {
         mat4.fromRotationTranslationScale(this.modelMatrix, this.transform.rotation, this.transform.position, this.transform.scale);
         WGPU_RENDERER.device.queue.writeBuffer(this.modelMatrixBuffer, 0, this.modelMatrix);
     }
-    render(renderPass) {
+    async render(renderPass) {
         if (!this.renderBindGroup) {
             console.log('Creating bind group');
             this.renderBindGroup = WGPU_RENDERER.device.createBindGroup({
@@ -326,16 +339,16 @@ export class PointCloud {
         renderPass.setVertexBuffer(0, this.vertexBuffer);
         renderPass.draw(this.numPoints, 1, 0, 0);
     }
-    translate(x, y, z) {
+    async translate(x, y, z) {
         this.applyTransform(vec3.fromValues(x, y, z), vec3.create(), vec3.fromValues(1, 1, 1));
     }
-    rotate(x, y, z) {
+    async rotate(x, y, z) {
         this.applyTransform(vec3.create(), vec3.fromValues(x, y, z), vec3.fromValues(1, 1, 1));
     }
-    scale(x, y, z) {
+    async scale(x, y, z) {
         this.applyTransform(vec3.create(), vec3.create(), vec3.fromValues(x, y, z));
     }
-    setTransform(transform) {
+    async setTransform(transform) {
         this.transform = transform;
         this.updateModelMatrix();
     }
@@ -344,5 +357,10 @@ export class PointCloud {
     }
     getNumPoints() {
         return this.numPoints;
+    }
+    async destroy() {
+        this.vertexBuffer.destroy();
+        this.modelMatrixBuffer.destroy();
+        this.transformUniformBuffer.destroy();
     }
 }

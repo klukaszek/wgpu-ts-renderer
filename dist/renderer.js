@@ -7,6 +7,7 @@ import { vec3 } from 'gl-matrix';
 import { Camera } from './camera.js';
 import { InputManager } from './input.js';
 import { CIELUVPointCloud } from './pointclouds/cieluv.js';
+import { WGPU_RENDERER } from './main.js';
 export class Renderer {
     constructor(canvas) {
         this.canvas = canvas;
@@ -26,7 +27,6 @@ export class Renderer {
         };
         this.lastFrameTime = 0;
         this.frameCount = 0;
-        this.drawing = false;
         this.animateRotation = true;
     }
     // Initialize the renderer with a controllable first person camera.
@@ -93,20 +93,14 @@ export class Renderer {
         // Create controls manager
         this.controls = new InputManager(this.camera, this.canvas);
         this.pointCloud = new CIELUVPointCloud(256);
-        //this.pointCloud = new ParticleSystem(1000000);
-        this.pointCloud.generateCloud();
-        // Set up simulation parameters
-        //(this.pointCloud as ParticleSystem).setGravity(vec3.fromValues(0, -9.81, 0));
-        //(this.pointCloud as ParticleSystem).setEmitterPosition(vec3.fromValues(0, 10, 0));
-        //(this.pointCloud as ParticleSystem).setVortex(1.0, vec3.fromValues(0, 1, 0));
+        await this.pointCloud.generateCloud();
     }
     // Perform a render pass and submit it to the GPU
     // This function is called every frame
     // The timestamp is the current time in milliseconds
-    render(timestamp) {
+    async render(timestamp) {
         const deltaTime = (timestamp - this.lastFrameTime) / 1000;
         this.lastFrameTime = timestamp;
-        //(this.pointCloud as ParticleSystem).update(deltaTime);
         // Before we render a new frame, poll for user input and update state accordingly
         this.controls.update();
         // Create a command encoder to encode the commands for the GPU
@@ -130,7 +124,7 @@ export class Renderer {
                 depthClearValue: 1.0,
             }
         });
-        this.pointCloud.render(renderPass);
+        await this.pointCloud.render(renderPass);
         if (this.animateRotation) {
             this.pointCloud.rotate(0, deltaTime * 0.2, 0);
         }
@@ -143,7 +137,47 @@ export class Renderer {
             this.frameCount = 0;
         }
     }
+    set ppmTextureData(ppmTexture) {
+        if (ppmTexture === undefined) {
+            return;
+        }
+        this.ppmTexture = ppmTexture;
+        console.log(this.ppmTexture);
+    }
+    setPointCloud(ppc) {
+        this.pointCloud = ppc;
+        this.pointCloud.generateCloud();
+    }
+    releasePointcloud() {
+        this.pointCloud.destroy();
+    }
     get framecount() {
         return this.frameCount;
+    }
+    createGPUBuffer(data, size, usage, label) {
+        if (size % 4 !== 0) {
+            size += 4 - (size % 4);
+        }
+        // pad the buffer
+        if (data && data.byteLength !== size) {
+            const paddedData = new Float32Array(size);
+            paddedData.set(data);
+            data = paddedData;
+        }
+        const buffer = this.device.createBuffer({
+            size: data ? data.byteLength : size,
+            usage: usage,
+            label: label
+        });
+        if (data) {
+            WGPU_RENDERER.device.queue.writeBuffer(buffer, 0, data);
+        }
+        return buffer;
+    }
+    async markGPUBufferForDeletion(buffer) {
+        setTimeout(() => {
+            buffer.destroy();
+            console.log("Buffer destroyed");
+        }, 10000);
     }
 }
