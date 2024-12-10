@@ -60,8 +60,8 @@ export class FibonacciLattice extends PointCloud {
         }
     `;
 
-    generateCloud(): void {
-        const pipeline = this.createComputePipeline(this.fibLatticeKernel);
+    public async generateCloud(): Promise<void> {
+        const pipeline = this.createComputePipeline(this.fibLatticeKernel, [this.transformBGLayout]);
         this.compute(pipeline, this.numPoints);
     }
 }

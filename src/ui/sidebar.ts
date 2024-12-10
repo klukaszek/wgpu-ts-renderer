@@ -1,4 +1,5 @@
 import { WGPU_RENDERER } from "../main.js";
+import { CIELUVPointCloud } from "../pointclouds/cieluv.js";
 
 // TODO: If I have the time I should come back and move the styles to a separate file
 
@@ -33,7 +34,7 @@ export class Sidebar {
         this.setupResizer();
         this.setupToggle();
     }
-    
+
     // Method to initialize the sidebar
     private initSidebar(): void {
         this.element.className = 'sidebar';
@@ -110,7 +111,7 @@ export class Sidebar {
         this.element.appendChild(this.toggleButton);
         document.body.appendChild(this.element);
     }
-    
+
     // Method to setup the resizer sidebar element
     private setupResizer(): void {
         let startX: number;
@@ -190,8 +191,8 @@ export class Sidebar {
         contentContainer.style.cssText = `
         transition: max-height 0.3s ease, opacity 0.3s ease;
         overflow: hidden;
-        max-height: 1000px;
-        opacity: 1;
+        max-height: 0px;
+        opacity: 0;
     `;
 
         if (isCollapsible) {
@@ -204,7 +205,7 @@ export class Sidebar {
         `;
             headerContainer.appendChild(toggleIcon);
 
-            let isExpanded = true;
+            let isExpanded = false;
             section.addEventListener('click', () => {
                 isExpanded = !isExpanded;
                 toggleIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)';
@@ -283,5 +284,95 @@ export class Sidebar {
         controlsSection.appendChild(controlsContainer);
 
         this.content.appendChild(controlsSection);
+    }
+
+    // Function to create a file upload button for PPM3 files
+    public addPPMUploadButton(): void {
+        const uploadSection = this.addSection('📤 PPM Upload', true);
+        const uploadContainer = document.createElement('div');
+        uploadContainer.style.cssText = `
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 10px;
+        background-color: rgba(45, 45, 45, 0.5);
+        border: 1px solid rgba(22, 22, 22, 0.6);
+        border-radius: 4px;
+        margin-left: 5px;
+        margin-right: 5px;
+    `;
+
+        const uploadButton = document.createElement('input');
+        uploadButton.type = 'file';
+        uploadButton.accept = '.ppm';
+        uploadButton.style.cssText = `
+        background-color: #404040;
+        color: #fff;
+        padding: 8px 12px;
+        border-radius: 4px;
+        font-family: Arial, sans-serif;
+        font-size: 14px;
+        cursor: pointer;
+    `;
+
+        uploadButton.addEventListener('change', async (event) => {
+            const file = (event.target as HTMLInputElement).files?.[0];
+            if (!file) {
+                console.error("No file selected.");
+                return;
+            }
+
+            const text = await file.text();
+            const ppm = this.parsePPM3(text);
+            if (ppm) {
+                // Further processing or visualization logic can go here.
+                WGPU_RENDERER.ppmTextureData = ppm;
+                WGPU_RENDERER.releasePointcloud();
+                WGPU_RENDERER.setPointCloud(new CIELUVPointCloud(256, ppm));
+            };
+        });
+
+        uploadContainer.appendChild(uploadButton);
+        uploadSection.appendChild(uploadContainer);
+        this.content.appendChild(uploadSection);
+    }
+
+    // Function to parse a PPM3 file and return pixel data
+    private parsePPM3(ppmText: string): {width: number, height: number, maxval: number, data: Float32Array} | null {
+        const lines = ppmText.split('\n').map(line => line.trim());
+        if (lines[0] !== 'P3') {
+            console.error('Invalid PPM format. Expected P3 header.');
+            return null;
+        }
+
+        let i = 1;
+        while (lines[i].startsWith('#')) {
+            i++; // Skip comments
+        }
+
+        const [width, height] = lines[i].split(' ').map(Number);
+        const maxval = parseInt(lines[i + 1]);
+        const pixels: number[] = [];
+
+        for (const line of lines.slice(i + 2)) {
+            pixels.push(...line.split(' ').map(Number));
+        }
+
+        // Reshape pixel data into a 3D array [height][width][3]
+        const image = [];
+        for (let y = 0; y < height; y++) {
+            const row = [];
+            for (let x = 0; x < width; x++) {
+                const idx = (y * width + x) * 3;
+                row.push([
+                    pixels[idx] / maxval,     // R
+                    pixels[idx + 1] / maxval, // G
+                    pixels[idx + 2] / maxval  // B
+                ]);
+            }
+            image.push(row);
+        }
+        
+        return { width, height, maxval, data: Float32Array.from(pixels) };
     }
 }

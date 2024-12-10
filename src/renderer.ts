@@ -7,16 +7,11 @@
 import { vec3, quat } from 'gl-matrix';
 import { Camera } from './camera.js';
 import { InputManager } from './input.js';
-import { Cube } from './primitives/cube.js';
-import { Icosphere } from './primitives/icosphere.js';
-import { Plane } from './primitives/plane.js';
+// Essentially unused but my renderer will yell at me if I don't import it
 import { SceneLights } from './lights.js';
-import { Material } from './material.js';
-import { Noise } from './noise.js';
-import { FibonacciLattice } from './pointclouds/fibonacci.js';
 import { CIELUVPointCloud } from './pointclouds/cieluv.js';
-import { ParticleSystem } from './pointclouds/particlesystem.js';
 import { PointCloud } from './pointclouds/pointcloud.js';
+import { WGPU_RENDERER } from './main.js';
 
 export interface Transform {
     position?: vec3;
@@ -48,6 +43,13 @@ interface DepthTexture {
     format: GPUTextureFormat;
 }
 
+export interface PPMTexture {
+    width: number;
+    height: number;
+    maxval: number;
+    data: Float32Array;
+}
+
 export class Renderer {
     public device!: GPUDevice;
     public context!: GPUCanvasContext;
@@ -77,14 +79,11 @@ export class Renderer {
 
     private lastFrameTime: number = 0;
     private frameCount: number = 0;
-    private drawing: boolean = false;
 
     // Scene objects
     public sceneLights: SceneLights | undefined;
-    private cube!: Cube;
-    private icosphere!: Icosphere;
-    private plane!: Plane;
     private pointCloud!: PointCloud;
+    private ppmTexture!: PPMTexture;
     public animateRotation: boolean = true;
 
     constructor(private canvas: HTMLCanvasElement) { }
@@ -112,6 +111,7 @@ export class Renderer {
                 maxStorageBufferBindingSize: maxBufferBindingSize,
                 maxBufferSize: maxBufferBindingSize,
                 maxComputeWorkgroupStorageSize: 32768,
+                
             },
         });
 
@@ -167,24 +167,16 @@ export class Renderer {
         // Create controls manager
         this.controls = new InputManager(this.camera, this.canvas);
         this.pointCloud = new CIELUVPointCloud(256);
-        //this.pointCloud = new ParticleSystem(1000000);
-        this.pointCloud.generateCloud();
-
-        // Set up simulation parameters
-        //(this.pointCloud as ParticleSystem).setGravity(vec3.fromValues(0, -9.81, 0));
-        //(this.pointCloud as ParticleSystem).setEmitterPosition(vec3.fromValues(0, 10, 0));
-        //(this.pointCloud as ParticleSystem).setVortex(1.0, vec3.fromValues(0, 1, 0));
+        await this.pointCloud.generateCloud();
     }
 
     // Perform a render pass and submit it to the GPU
     // This function is called every frame
     // The timestamp is the current time in milliseconds
-    render(timestamp: number) {
+    async render(timestamp: number) {
 
         const deltaTime = (timestamp - this.lastFrameTime) / 1000;
         this.lastFrameTime = timestamp;
-
-        //(this.pointCloud as ParticleSystem).update(deltaTime);
 
         // Before we render a new frame, poll for user input and update state accordingly
         this.controls.update();
@@ -213,7 +205,7 @@ export class Renderer {
             } as GPURenderPassDepthStencilAttachment
         });
 
-        this.pointCloud.render(renderPass);
+        await this.pointCloud.render(renderPass);
 
         if (this.animateRotation) {
             this.pointCloud.rotate(0, deltaTime * 0.2, 0);
@@ -224,7 +216,7 @@ export class Renderer {
 
         // Submit the commands to the GPU
         this.device.queue.submit([commandEncoder.finish()]);
-        
+
         this.frameCount++;
 
         if (this.frameCount === Number.MAX_SAFE_INTEGER - 1) {
@@ -232,7 +224,58 @@ export class Renderer {
         }
     }
 
+    public set ppmTextureData(ppmTexture: PPMTexture | undefined) {
+
+        if (ppmTexture === undefined) {
+            return;
+        }
+
+        this.ppmTexture = ppmTexture;
+        console.log(this.ppmTexture);
+    }
+
+    public setPointCloud(ppc: PointCloud) {
+        this.pointCloud = ppc;
+        this.pointCloud.generateCloud();
+    }
+
+    public releasePointcloud() {
+        this.pointCloud.destroy();
+    }
+
     public get framecount(): number {
         return this.frameCount;
+    }
+
+    public createGPUBuffer(data: Float32Array | null, size: number | 1024, usage: GPUBufferUsageFlags, label?: string) {
+        if (size % 4 !== 0) {
+            size += 4 - (size % 4);
+        }
+
+        // pad the buffer
+        if (data && data.byteLength !== size) {
+            const paddedData = new Float32Array(size);
+            paddedData.set(data);
+            data = paddedData;
+        }
+
+        const buffer = this.device.createBuffer({
+            size: data ? data.byteLength : size,
+            usage: usage,
+            label: label
+        });
+
+        if (data) {
+            WGPU_RENDERER.device.queue.writeBuffer(buffer, 0, data);
+        }
+
+        return buffer;
+    }
+    
+    public async markGPUBufferForDeletion(buffer: GPUBuffer) {
+        setTimeout(() => {
+            buffer.destroy();
+            console.log("Buffer destroyed");
+        }, 10000);
     }
 }

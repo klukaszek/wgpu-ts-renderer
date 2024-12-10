@@ -18,6 +18,7 @@ async function main() {
     // Initialize the WebGPU renderer context 
     await renderer.init();
     sidebar.addControls();
+    sidebar.addPPMUploadButton();
 
     function frame(timestamp: number) {
         renderer.render(timestamp);

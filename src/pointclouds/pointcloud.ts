@@ -17,6 +17,7 @@ export abstract class PointCloud {
     protected renderPipeline: GPURenderPipeline | null = null;
 
     protected computeBindGroup: GPUBindGroup | null = null;
+    protected transformBindGroup: GPUBindGroup | null = null;
     protected transformPipeline: GPUComputePipeline | null = null;
     protected numPoints: number;
 
@@ -33,6 +34,13 @@ export abstract class PointCloud {
             vertices[index] = 0.0;
         }
     `;
+
+    private initBGLayout = WGPU_RENDERER.device.createBindGroupLayout({
+        entries: [
+            { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }
+        ],
+        label: 'Init Bind Group Layout'
+    });
 
     private transformKernel = `
         @group(0) @binding(0) var<storage, read_write> vertices: array<f32>;
@@ -158,6 +166,14 @@ export abstract class PointCloud {
         }
     `;
 
+    protected transformBGLayout = WGPU_RENDERER.device.createBindGroupLayout({
+        entries: [
+            { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+            { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } }
+        ],
+        label: 'Transform Bind Group Layout'
+    });
+
     constructor(numPoints: number, transform?: Transform) {
         this.numPoints = numPoints;
         this.transform = transform || {
@@ -184,14 +200,17 @@ export abstract class PointCloud {
             label: 'Model Matrix Buffer'
         });
 
-        this.transformPipeline = this.createComputePipeline(this.transformKernel);
-        this.computeBindGroup = WGPU_RENDERER.device.createBindGroup({
+        this.transformPipeline = this.createComputePipeline(this.transformKernel, [this.transformBGLayout], "Transform Pipeline");
+        this.transformBindGroup = WGPU_RENDERER.device.createBindGroup({
             layout: this.transformPipeline.getBindGroupLayout(0),
             entries: [
                 { binding: 0, resource: { buffer: this.vertexBuffer } },
                 { binding: 1, resource: { buffer: this.transformUniformBuffer } }
             ]
         });
+
+        // For basic point cloud rendering, we set our compute bind group to the transform bind group
+        this.computeBindGroup = this.transformBindGroup;
 
         this.initializeBuffer();
         this.initRenderPipeline();
@@ -217,11 +236,13 @@ export abstract class PointCloud {
 
         this.renderPipeline = WGPU_RENDERER.device.createRenderPipeline({
             layout: WGPU_RENDERER.device.createPipelineLayout({
-                bindGroupLayouts: [bindGroupLayout]
+                bindGroupLayouts: [bindGroupLayout],
+                label: 'PointCloud Render Pipeline Layout'
             }),
             vertex: {
                 module: WGPU_RENDERER.device.createShaderModule({
-                    code: this.vertexShader
+                    code: this.vertexShader,
+                    label: 'PointCloud Vertex Shader'
                 }),
                 entryPoint: 'main',
                 buffers: [{
@@ -242,7 +263,8 @@ export abstract class PointCloud {
             },
             fragment: {
                 module: WGPU_RENDERER.device.createShaderModule({
-                    code: this.fragmentShader
+                    code: this.fragmentShader,
+                    label: 'PointCloud Fragment Shader'
                 }),
                 entryPoint: 'main',
                 targets: [{ format: navigator.gpu.getPreferredCanvasFormat() }]
@@ -262,30 +284,16 @@ export abstract class PointCloud {
         });
     }
 
-    protected createComputePipeline(shader: string): GPUComputePipeline {
-        const bindGroupLayout = WGPU_RENDERER.device.createBindGroupLayout({
-            entries: [
-                {
-                    binding: 0,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: 'storage' }
-                },
-                {
-                    binding: 1,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: 'uniform' }
-                }
-            ],
-            label: 'Compute Bind Group Layout'
-        });
-
+    protected createComputePipeline(shader: string, BGLs: GPUBindGroupLayout[], label?: string): GPUComputePipeline {
         return WGPU_RENDERER.device.createComputePipeline({
             layout: WGPU_RENDERER.device.createPipelineLayout({
-                bindGroupLayouts: [bindGroupLayout]
+                bindGroupLayouts: BGLs,
+                label: label?.concat(' Pipeline Layout')
             }),
             compute: {
                 module: WGPU_RENDERER.device.createShaderModule({
-                    code: shader
+                    code: shader,
+                    label: label || 'Unnamed Compute Shader'
                 }),
                 entryPoint: 'main'
             }
@@ -294,7 +302,13 @@ export abstract class PointCloud {
 
     // Initialize our storage buffer with zeros using the init kernel
     private initializeBuffer(): void {
-        const pipeline = this.createComputePipeline(this.initKernel);
+        const pipeline = this.createComputePipeline(this.initKernel, [this.initBGLayout], "Point Cloud Init Kernel");
+        this.computeBindGroup = WGPU_RENDERER.device.createBindGroup({
+            layout: pipeline.getBindGroupLayout(0),
+            entries: [
+                { binding: 0, resource: { buffer: this.vertexBuffer } }
+            ]
+        });
         this.compute(pipeline, this.vertexBuffer.size / 4); // Size in floats
     }
 
@@ -317,7 +331,7 @@ export abstract class PointCloud {
     }
 
     // Apply a transformation to the point cloud using a compute shader
-    private applyTransform(translation: vec3, rotation: vec3, scale: vec3): void {
+    private async applyTransform(translation: vec3, rotation: vec3, scale: vec3): Promise<void> {
         // Update transform uniform buffer
         const transformData = new Float32Array([
             ...translation, 0.0,  // Add padding
@@ -330,12 +344,14 @@ export abstract class PointCloud {
             transformData
         );
 
+        this.computeBindGroup = this.transformBindGroup;
+
         // Create pipeline and bind group for transform
         this.compute(this.transformPipeline!, this.numPoints);
     }
 
     // Update the model matrix buffer with the current transform
-    private updateModelMatrix(): void {
+    private async updateModelMatrix(): Promise<void> {
         mat4.fromRotationTranslationScale(
             this.modelMatrix,
             this.transform.rotation!,
@@ -349,7 +365,7 @@ export abstract class PointCloud {
         );
     }
 
-    public render(renderPass: GPURenderPassEncoder): void {
+    public async render(renderPass: GPURenderPassEncoder): Promise<void> {
         if (!this.renderBindGroup) {
             console.log('Creating bind group');
             this.renderBindGroup = WGPU_RENDERER.device.createBindGroup({
@@ -373,9 +389,9 @@ export abstract class PointCloud {
         renderPass.draw(this.numPoints, 1, 0, 0);
     }
 
-    public abstract generateCloud(): void;
+    public abstract generateCloud(): Promise<void>;
 
-    public translate(x: number, y: number, z: number): void {
+    public async translate(x: number, y: number, z: number): Promise<void> {
         this.applyTransform(
             vec3.fromValues(x, y, z),
             vec3.create(),
@@ -383,7 +399,7 @@ export abstract class PointCloud {
         );
     }
 
-    public rotate(x: number, y: number, z: number): void {
+    public async rotate(x: number, y: number, z: number): Promise<void> {
         this.applyTransform(
             vec3.create(),
             vec3.fromValues(x, y, z),
@@ -391,7 +407,7 @@ export abstract class PointCloud {
         );
     }
 
-    public scale(x: number, y: number, z: number): void {
+    public async scale(x: number, y: number, z: number): Promise<void> {
         this.applyTransform(
             vec3.create(),
             vec3.create(),
@@ -399,7 +415,7 @@ export abstract class PointCloud {
         );
     }
 
-    public setTransform(transform: Transform): void {
+    public async setTransform(transform: Transform): Promise<void> {
         this.transform = transform;
         this.updateModelMatrix();
     }
@@ -410,5 +426,11 @@ export abstract class PointCloud {
 
     public getNumPoints(): number {
         return this.numPoints;
+    }
+
+    public async destroy(): Promise<void> {
+        this.vertexBuffer.destroy();
+        this.modelMatrixBuffer.destroy();
+        this.transformUniformBuffer.destroy();
     }
 }
