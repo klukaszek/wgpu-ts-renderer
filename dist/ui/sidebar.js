@@ -1,5 +1,6 @@
 import { WGPU_RENDERER } from "../main.js";
-import { CIELUVPointCloud } from "../pointclouds/cieluv.js";
+import { util } from "../util.js";
+import { ColorSpace } from "../renderer.js";
 // TODO: If I have the time I should come back and move the styles to a separate file
 export class Sidebar {
     // Get current state of the sidebar
@@ -270,6 +271,17 @@ export class Sidebar {
         font-size: 14px;
         cursor: pointer;
     `;
+        const removeTextureButton = document.createElement('button');
+        removeTextureButton.textContent = 'Remove Texture';
+        removeTextureButton.style.cssText = `
+        background-color: #404040;
+        color: #fff;
+        padding: 8px 12px;
+        border-radius: 4px;
+        font-family: Arial, sans-serif;
+        font-size: 14px;
+        cursor: pointer;
+    `;
         uploadButton.addEventListener('change', async (event) => {
             const file = event.target.files?.[0];
             if (!file) {
@@ -277,50 +289,62 @@ export class Sidebar {
                 return;
             }
             const text = await file.text();
-            const ppm = this.parsePPM3(text);
+            const ppm = util.parsePPM3(text);
             if (ppm) {
                 // Further processing or visualization logic can go here.
                 WGPU_RENDERER.ppmTextureData = ppm;
-                WGPU_RENDERER.releasePointcloud();
-                WGPU_RENDERER.setPointCloud(new CIELUVPointCloud(256, ppm));
+                WGPU_RENDERER.setColorSpace(WGPU_RENDERER.currentColorSpace);
             }
             ;
         });
+        removeTextureButton.addEventListener('click', () => {
+            WGPU_RENDERER.removePPMTexture();
+            WGPU_RENDERER.setColorSpace(WGPU_RENDERER.currentColorSpace);
+        });
         uploadContainer.appendChild(uploadButton);
+        uploadContainer.appendChild(removeTextureButton);
         uploadSection.appendChild(uploadContainer);
         this.content.appendChild(uploadSection);
     }
-    // Function to parse a PPM3 file and return pixel data
-    parsePPM3(ppmText) {
-        const lines = ppmText.split('\n').map(line => line.trim());
-        if (lines[0] !== 'P3') {
-            console.error('Invalid PPM format. Expected P3 header.');
-            return null;
-        }
-        let i = 1;
-        while (lines[i].startsWith('#')) {
-            i++; // Skip comments
-        }
-        const [width, height] = lines[i].split(' ').map(Number);
-        const maxval = parseInt(lines[i + 1]);
-        const pixels = [];
-        for (const line of lines.slice(i + 2)) {
-            pixels.push(...line.split(' ').map(Number));
-        }
-        // Reshape pixel data into a 3D array [height][width][3]
-        const image = [];
-        for (let y = 0; y < height; y++) {
-            const row = [];
-            for (let x = 0; x < width; x++) {
-                const idx = (y * width + x) * 3;
-                row.push([
-                    pixels[idx] / maxval, // R
-                    pixels[idx + 1] / maxval, // G
-                    pixels[idx + 2] / maxval // B
-                ]);
-            }
-            image.push(row);
-        }
-        return { width, height, maxval, data: Float32Array.from(pixels) };
+    addDefaultColourSpaces() {
+        const colourSpacesSection = this.addSection('🌈 Colour Spaces', true);
+        const colourSpacesContainer = document.createElement('div');
+        colourSpacesContainer.style.cssText = `
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 10px;
+        background-color: rgba(45, 45, 45, 0.5);
+        border: 1px solid rgba(22, 22, 22, 0.6);
+        border-radius: 4px;
+        margin-left: 5px;
+        margin-right: 5px;
+    `;
+        let keys = Object.keys(ColorSpace);
+        keys.forEach((key) => {
+            let space = key;
+            const spaceItem = document.createElement('div');
+            spaceItem.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 0;
+            cursor: pointer;
+        `;
+            const spaceName = document.createElement('span');
+            spaceName.textContent = space;
+            spaceName.style.cssText = `
+            color: #fff;
+            font-size: 16px;
+        `;
+            spaceItem.addEventListener('click', () => {
+                //WGPU_RENDERER.ppmTextureData = undefined;
+                WGPU_RENDERER.setColorSpace(space);
+            });
+            spaceItem.appendChild(spaceName);
+            colourSpacesContainer.appendChild(spaceItem);
+        });
+        colourSpacesSection.appendChild(colourSpacesContainer);
+        this.content.appendChild(colourSpacesSection);
     }
 }

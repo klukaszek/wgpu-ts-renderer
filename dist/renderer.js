@@ -8,6 +8,12 @@ import { Camera } from './camera.js';
 import { InputManager } from './input.js';
 import { CIELUVPointCloud } from './pointclouds/cieluv.js';
 import { WGPU_RENDERER } from './main.js';
+import { LinearRGBCube } from './pointclouds/linearrgbcube.js';
+export var ColorSpace;
+(function (ColorSpace) {
+    ColorSpace["sRGB"] = "sRGB";
+    ColorSpace["CIELUV"] = "CIELUV";
+})(ColorSpace || (ColorSpace = {}));
 export class Renderer {
     constructor(canvas) {
         this.canvas = canvas;
@@ -28,6 +34,7 @@ export class Renderer {
         this.lastFrameTime = 0;
         this.frameCount = 0;
         this.animateRotation = true;
+        this.currentColorSpace = ColorSpace.CIELUV;
     }
     // Initialize the renderer with a controllable first person camera.
     async init() {
@@ -112,7 +119,7 @@ export class Renderer {
             colorAttachments: [{
                     view: this.msaa.view,
                     resolveTarget: this.resolve.view,
-                    clearValue: { r: 0.1, g: 0.1, b: 0.1, a: 1.0 },
+                    clearValue: { r: 0.5, g: 0.5, b: 0.5, a: 1.0 },
                     loadOp: 'clear',
                     storeOp: 'store'
                 }],
@@ -139,10 +146,37 @@ export class Renderer {
     }
     set ppmTextureData(ppmTexture) {
         if (ppmTexture === undefined) {
+            console.log("Marked PPM Texture for deletion");
+            this.ppmTexture = undefined;
+            const tmp = this.ppmBuffer;
+            if (tmp !== null) {
+                this.markGPUBufferForDeletion(tmp);
+            }
             return;
         }
         this.ppmTexture = ppmTexture;
-        console.log(this.ppmTexture);
+        const tmp = this.ppmBuffer;
+        if (tmp !== null) {
+            this.markGPUBufferForDeletion(tmp);
+        }
+        if (this.ppmTexture.data.length % 4 !== 0) {
+            this.ppmTexture.data = new Uint8Array(this.ppmTexture.data.buffer, 0, this.ppmTexture.data.length - (this.ppmTexture.data.length % 4));
+        }
+        const size = this.ppmTexture.data.length;
+        console.log("PPM Texture size: " + size);
+        this.ppmBuffer = WGPU_RENDERER.device.createBuffer({
+            size: this.ppmTexture.data.length * Uint8Array.BYTES_PER_ELEMENT,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
+        WGPU_RENDERER.device.queue.writeBuffer(this.ppmBuffer, 0, this.ppmTexture.data.buffer, 0, size);
+    }
+    getPPMTextureData() {
+        return { ppmTexture: this.ppmTexture, buffer: this.ppmBuffer };
+    }
+    removePPMTexture() {
+        this.ppmTexture = undefined;
+        this.markGPUBufferForDeletion(this.ppmBuffer);
+        this.ppmBuffer = null;
     }
     setPointCloud(ppc) {
         this.pointCloud = ppc;
@@ -151,28 +185,23 @@ export class Renderer {
     releasePointcloud() {
         this.pointCloud.destroy();
     }
+    setColorSpace(colorSpace) {
+        this.releasePointcloud();
+        switch (colorSpace) {
+            case ColorSpace.CIELUV:
+                this.currentColorSpace = ColorSpace.CIELUV;
+                this.setPointCloud(new CIELUVPointCloud(256));
+                break;
+            case ColorSpace.sRGB:
+                this.currentColorSpace = ColorSpace.sRGB;
+                this.setPointCloud(new LinearRGBCube(8));
+                break;
+            default:
+                console.error("Invalid color space");
+        }
+    }
     get framecount() {
         return this.frameCount;
-    }
-    createGPUBuffer(data, size, usage, label) {
-        if (size % 4 !== 0) {
-            size += 4 - (size % 4);
-        }
-        // pad the buffer
-        if (data && data.byteLength !== size) {
-            const paddedData = new Float32Array(size);
-            paddedData.set(data);
-            data = paddedData;
-        }
-        const buffer = this.device.createBuffer({
-            size: data ? data.byteLength : size,
-            usage: usage,
-            label: label
-        });
-        if (data) {
-            WGPU_RENDERER.device.queue.writeBuffer(buffer, 0, data);
-        }
-        return buffer;
     }
     async markGPUBufferForDeletion(buffer) {
         setTimeout(() => {

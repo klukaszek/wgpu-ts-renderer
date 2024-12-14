@@ -14,6 +14,7 @@ async function main() {
     await renderer.init();
     sidebar.addControls();
     sidebar.addPPMUploadButton();
+    sidebar.addDefaultColourSpaces();
     function frame(timestamp) {
         renderer.render(timestamp);
         requestAnimationFrame(frame);

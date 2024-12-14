@@ -21,6 +21,7 @@ export class PointCloud {
             if (index >= arrayLength(&vertices)) {
                 return;
             }
+
             vertices[index] = 0.0;
         }
     `;
@@ -141,6 +142,7 @@ export class PointCloud {
             var output: VertexOutput;
             let worldPos = (model.modelMatrix * vec4f(position, 1.0)).xyz;
             output.position = uniforms.projectionMatrix * uniforms.viewMatrix * vec4f(worldPos, 1.0);
+
             output.color = color;
             return output;
         }
@@ -166,9 +168,10 @@ export class PointCloud {
         };
         this.vertexBuffer = WGPU_RENDERER.device.createBuffer({
             size: numPoints * 6 * Float32Array.BYTES_PER_ELEMENT, // 3 floats for position, 3 for color
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
             label: 'Point Cloud Vertex Buffer'
         });
+        console.log(this.vertexBuffer.size);
         this.transformUniformBuffer = WGPU_RENDERER.device.createBuffer({
             size: 48, // 3 vec3s + padding
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -232,7 +235,8 @@ export class PointCloud {
                                 format: 'float32x3',
                                 offset: 12,
                                 shaderLocation: 1
-                            }
+                            },
+                            // We could use instanced quads instead and add a size attributes
                         ]
                     }]
             },
@@ -280,7 +284,8 @@ export class PointCloud {
             layout: pipeline.getBindGroupLayout(0),
             entries: [
                 { binding: 0, resource: { buffer: this.vertexBuffer } }
-            ]
+            ],
+            label: 'Point Cloud Init Bind Group'
         });
         this.compute(pipeline, this.vertexBuffer.size / 4); // Size in floats
     }
