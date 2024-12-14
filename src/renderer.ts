@@ -12,6 +12,7 @@ import { SceneLights } from './lights.js';
 import { CIELUVPointCloud } from './pointclouds/cieluv.js';
 import { PointCloud } from './pointclouds/pointcloud.js';
 import { WGPU_RENDERER } from './main.js';
+import { LinearRGBCube } from './pointclouds/linearrgbcube.js';
 
 export interface Transform {
     position?: vec3;
@@ -24,6 +25,11 @@ export interface Color {
     g: number;
     b: number;
     a: number;
+}
+
+export enum ColorSpace {
+    sRGB = 'sRGB',
+    CIELUV = 'CIELUV',
 }
 
 interface Resolve {
@@ -47,7 +53,7 @@ export interface PPMTexture {
     width: number;
     height: number;
     maxval: number;
-    data: Float32Array;
+    data: Uint8Array;
 }
 
 export class Renderer {
@@ -83,8 +89,12 @@ export class Renderer {
     // Scene objects
     public sceneLights: SceneLights | undefined;
     private pointCloud!: PointCloud;
-    private ppmTexture!: PPMTexture;
+    private ppmTexture!: PPMTexture | undefined;
+    private ppmBuffer!: GPUBuffer | null;
+
     public animateRotation: boolean = true;
+
+    public currentColorSpace: ColorSpace = ColorSpace.CIELUV;
 
     constructor(private canvas: HTMLCanvasElement) { }
 
@@ -111,7 +121,7 @@ export class Renderer {
                 maxStorageBufferBindingSize: maxBufferBindingSize,
                 maxBufferSize: maxBufferBindingSize,
                 maxComputeWorkgroupStorageSize: 32768,
-                
+
             },
         });
 
@@ -192,7 +202,7 @@ export class Renderer {
             colorAttachments: [{
                 view: this.msaa.view,
                 resolveTarget: this.resolve.view,
-                clearValue: { r: 0.1, g: 0.1, b: 0.1, a: 1.0 },
+                clearValue: { r: 0.5, g: 0.5, b: 0.5, a: 1.0 },
                 loadOp: 'clear',
                 storeOp: 'store'
             }],
@@ -227,11 +237,49 @@ export class Renderer {
     public set ppmTextureData(ppmTexture: PPMTexture | undefined) {
 
         if (ppmTexture === undefined) {
+            console.log("Marked PPM Texture for deletion");
+            this.ppmTexture = undefined;
+            
+            const tmp = this.ppmBuffer!;
+
+            if (tmp !== null) {
+                this.markGPUBufferForDeletion(tmp);
+            }
+
             return;
         }
 
         this.ppmTexture = ppmTexture;
-        console.log(this.ppmTexture);
+
+        const tmp = this.ppmBuffer!;
+
+        if (tmp !== null) {
+            this.markGPUBufferForDeletion(tmp);
+        }
+
+        if (this.ppmTexture.data.length % 4 !== 0) {
+            this.ppmTexture.data = new Uint8Array(this.ppmTexture.data.buffer, 0, this.ppmTexture.data.length - (this.ppmTexture.data.length % 4));
+        }
+
+        const size = this.ppmTexture.data.length;
+        console.log("PPM Texture size: " + size);
+
+        this.ppmBuffer = WGPU_RENDERER.device.createBuffer({
+            size: this.ppmTexture.data.length * Uint8Array.BYTES_PER_ELEMENT,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
+
+        WGPU_RENDERER.device.queue.writeBuffer(this.ppmBuffer, 0, this.ppmTexture.data.buffer, 0, size);
+    }
+
+    public getPPMTextureData(): { ppmTexture?: PPMTexture, buffer?: GPUBuffer | null } {
+        return { ppmTexture: this.ppmTexture, buffer: this.ppmBuffer };
+    }
+
+    public removePPMTexture() {
+        this.ppmTexture = undefined;
+        this.markGPUBufferForDeletion(this.ppmBuffer!);
+        this.ppmBuffer = null;
     }
 
     public setPointCloud(ppc: PointCloud) {
@@ -243,35 +291,26 @@ export class Renderer {
         this.pointCloud.destroy();
     }
 
+    public setColorSpace(colorSpace: ColorSpace) {
+        this.releasePointcloud();
+        switch (colorSpace) {
+            case ColorSpace.CIELUV:
+                this.currentColorSpace = ColorSpace.CIELUV;
+                this.setPointCloud(new CIELUVPointCloud(256));
+                break;
+            case ColorSpace.sRGB:
+                this.currentColorSpace = ColorSpace.sRGB;
+                this.setPointCloud(new LinearRGBCube(8));
+                break;
+            default:
+                console.error("Invalid color space");
+        }
+    }
+
     public get framecount(): number {
         return this.frameCount;
     }
 
-    public createGPUBuffer(data: Float32Array | null, size: number | 1024, usage: GPUBufferUsageFlags, label?: string) {
-        if (size % 4 !== 0) {
-            size += 4 - (size % 4);
-        }
-
-        // pad the buffer
-        if (data && data.byteLength !== size) {
-            const paddedData = new Float32Array(size);
-            paddedData.set(data);
-            data = paddedData;
-        }
-
-        const buffer = this.device.createBuffer({
-            size: data ? data.byteLength : size,
-            usage: usage,
-            label: label
-        });
-
-        if (data) {
-            WGPU_RENDERER.device.queue.writeBuffer(buffer, 0, data);
-        }
-
-        return buffer;
-    }
-    
     public async markGPUBufferForDeletion(buffer: GPUBuffer) {
         setTimeout(() => {
             buffer.destroy();

@@ -19,6 +19,7 @@ async function main() {
     await renderer.init();
     sidebar.addControls();
     sidebar.addPPMUploadButton();
+    sidebar.addDefaultColourSpaces();
 
     function frame(timestamp: number) {
         renderer.render(timestamp);
